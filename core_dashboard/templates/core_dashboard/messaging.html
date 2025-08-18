@@ -1,0 +1,28 @@
+{% extends "core_dashboard/base.html" %}
+
+{% block content %}
+    <h1 class="section-title">Messaging Area</h1>
+
+    <div class="card mt-4">
+        <div class="card-header">Send Message</div>
+        <div class="card-body">
+            <form method="post">
+                {% csrf_token %}
+                <div class="mb-3">
+                    <label for="subAreaSelect" class="form-label">Select Sub-Area</label>
+                    <select class="form-select" id="subAreaSelect" name="sub_area">
+                        <option value="">Select a Sub-Area</option>
+                        {% for sub_area in sub_areas %}
+                            <option value="{{ sub_area }}">{{ sub_area }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label for="messageContent" class="form-label">Message</label>
+                    <textarea class="form-control" id="messageContent" name="message_content" rows="5"></textarea>
+                </div>
+                <button type="submit" class="btn btn-primary">Send Message</button>
+            </form>
+        </div>
+    </div>
+{% endblock %}

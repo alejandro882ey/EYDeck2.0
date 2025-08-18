@@ -1,0 +1,608 @@
+{% extends "core_dashboard/base.html" %}
+
+{% block content %}
+<h3 class="section-title">Data Filtering</h3>
+<!-- Filter Section -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header filter-header" data-bs-toggle="collapse" data-bs-target="#filterBody" aria-expanded="true" aria-controls="filterBody">
+                Filter Data <span class="toggle-icon material-icons-round">expand_more</span>
+            </div>
+            <div id="filterBody" class="collapse show card-body">
+                <form method="GET" action="{% url 'dashboard' %}">
+                    <div class="row g-3">
+                        <div class="col-md-3">
+                            <label for="partnerSelect" class="form-label">Partner</label>
+                            <select class="form-select" id="partnerSelect" name="partner">
+                                <option value="">All Partners</option>
+                                {% for partner in partners %}
+                                    <option value="{{ partner }}" {% if selected_partner == partner %}selected{% endif %}>{{ partner }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label for="managerSelect" class="form-label">Manager</label>
+                            <select class="form-select" id="managerSelect" name="manager">
+                                <option value="">All Managers</option>
+                                {% for manager in managers %}
+                                    <option value="{{ manager }}" {% if selected_manager == manager %}selected{% endif %}>{{ manager }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label for="areaSelect" class="form-label">Area</label>
+                            <select class="form-select" id="areaSelect" name="area">
+                                <option value="">All Areas</option>
+                                {% for area in areas %}
+                                    <option value="{{ area }}" {% if selected_area == area %}selected{% endif %}>{{ area }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label for="subAreaSelect" class="form-label">Sub-Area</label>
+                            <select class="form-select" id="subAreaSelect" name="sub_area">
+                                <option value="">All Sub-Areas</option>
+                                {% for sub_area in sub_areas %}
+                                    <option value="{{ sub_area }}" {% if selected_sub_area == sub_area %}selected{% endif %}>{{ sub_area }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label for="clientSelect" class="form-label">Client</label>
+                            <select class="form-select" id="clientSelect" name="client">
+                                <option value="">All Clients</option>
+                                {% for client in clients %}
+                                    <option value="{{ client }}" {% if selected_client == client %}selected{% endif %}>{{ client }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label for="weekSelect" class="form-label">Week</label>
+                            <select class="form-select" id="weekSelect" name="week">
+                                <option value="">All Weeks</option>
+                                {% for week in available_weeks %}
+                                    <option value="{{ week }}" {% if selected_week == week %}selected{% endif %}>{{ week }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-12 mt-3">
+                            <button type="submit" class="btn btn-primary">Apply Filters</button>
+                            <a href="{% url 'dashboard' %}" class="btn btn-secondary">Clear Filters</a>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if partner_spec_data %}
+<h3 class="section-title">Especificacion del Partner: {{ selected_partner }}</h3>
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-header">Numero de Engagements</div>
+            <div class="card-body">
+                <h3 class="card-title kpi-card-value">{{ partner_spec_data.num_engagements }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-header">Numero de Clientes</div>
+            <div class="card-body">
+                <h3 class="card-title kpi-card-value">{{ partner_spec_data.num_clients }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-header">Revenue Days</div>
+            <div class="card-body">
+                <h3 class="card-title kpi-card-value">{{ partner_spec_data.revenue_days }}</h3>
+            </div>
+        </div>
+    </div>
+    {% if partner_spec_data.mtd_ansr_sintetico %}
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-header">MTD ANSR Sintetico (Cliente: {{ selected_client }})</div>
+            <div class="card-body">
+                <h3 class="card-title kpi-card-value">{{ partner_spec_data.mtd_ansr_sintetico }}</h3>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header">Lista de Clientes</div>
+            <div class="card-body" style="max-height: 200px; overflow-y: auto;">
+                <ul class="list-group list-group-flush">
+                    {% for client_name in partner_spec_data.client_list %}
+                    <li class="list-group-item bg-transparent text-white">{{ client_name }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<h3 class="section-title">Macro</h3>
+<div class="row mb-4">
+    <div class="col-md-4">
+        <div class="card text-center">
+            <div class="card-header">Total Clientes</div>
+            <div class="card-body">
+                <h3 class="card-title kpi-card-value">{{ macro_total_clients }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-center">
+            <div class="card-header">ANSR Sintético</div>
+            <div class="card-body">
+                <h3 class="card-title kpi-card-value">{{ macro_total_ansr_sintetico }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-center">
+            <div class="card-header">Margen</div>
+            <div class="card-body">
+                <h3 class="card-title kpi-card-value">{{ macro_margin }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-center">
+            <div class="card-header">Porcentaje Margen</div>
+            <div class="card-body">
+                <h3 class="card-title kpi-card-value">{{ macro_margin_percentage }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-center">
+            <div class="card-header">RPH</div>
+            <div class="card-body">
+                <h3 class="card-title kpi-card-value">{{ macro_rph }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-center">
+            <div class="card-header">Monthly Tracker</div>
+            <div class="card-body">
+                <h3 class="card-title kpi-card-value">{{ macro_monthly_tracker }}</h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+<h3 class="section-title">Key Performance Indicators</h3>
+<div class="row">
+    <!-- Top Partners and Top Clients Section (Moved to top right) -->
+    <div class="col-lg-12">
+        <div class="row">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">Top Partners by Revenue</div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-dark table-striped table-hover">
+                                <thead>
+                                    <tr>
+                                        <th scope="col">Partner</th>
+                                        <th scope="col">Revenue</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for partner in top_partners %}
+                                    <tr>
+                                        <td>{{ partner.engagement_partner }}</td>
+                                        <td>{{ partner.total_revenue }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">Top Clients by Revenue</div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-dark table-striped table-hover">
+                                <thead>
+                                    <tr>
+                                        <th scope="col">Client</th>
+                                        <th scope="col">Revenue</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for client in top_clients_table %}
+                                    <tr>
+                                        <td>{{ client.client__name }}</td>
+                                        <td>{{ client.total_revenue }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<h3 class="section-title">Revenue Visualizations</h3>
+<!-- Charts Section -->
+<div class="row mb-4">
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-header">Revenue by Service Line</div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="areaChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-header">Top 5 Clients by Revenue</div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="clientChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-12">
+        <div class="card">
+            <div class="card-header">Revenue Trend</div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="trendChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-header">Client Distribution by Partner</div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="partnerDistributionChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-header">Unbilled Inventory by Service Line</div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="unbilledInventoryChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Nuevo Gráfico: Pérdida por Tipo de Cambio -->
+    <div class="col-lg-12">
+        <div class="card">
+            <div class="card-header">Pérdida por Tipo de Cambio</div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-8">
+                        <div class="chart-container">
+                            <canvas id="lossPerDifferentialChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <h4>Valores de Pérdida:</h4>
+                        <ul class="list-group list-group-flush">
+                            <li class="list-group-item bg-transparent text-ey-yellow">Total Pérdida: {{ loss_per_differential }}</li>
+                            <li class="list-group-item bg-transparent text-ey-yellow">Pérdida BCV: <span id="loss-bcv">N/A</span></li>
+                            <li class="list-group-item bg-transparent text-ey-yellow">Pérdida Monitor: <span id="loss-monitor">N/A</span></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<h3 class="section-title">Recent Data Entries</h3>
+<!-- Detailed Tables Section -->
+<div class="row mb-4">
+    <div class="col-lg-12">
+        <div class="card">
+            <div class="card-header">Recent Revenue Entries</div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-dark table-striped table-hover">
+                        <thead>
+                            <tr>
+                                <th scope="col">Date</th>
+                                <th scope="col">Client</th>
+                                <th scope="col">Area</th>
+                                <th scope="col">Revenue</th>
+                                <th scope="col">Partner</th>
+                                <th scope="col">Manager</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for entry in recent_entries %}
+                            <tr>
+                                <td>{{ entry.date }}</td>
+                                <td>{{ entry.client.name }}</td>
+                                <td>{{ entry.area.name }}</td>
+                                <td>{{ entry.revenue_formatted }}</td>
+                                <td>{{ entry.engagement_partner }}</td>
+                                <td>{{ entry.engagement_manager }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Data from Django context
+    const areaLabels = {{ area_labels|safe }};
+    const areaData = {{ area_data|safe }};
+    const clientLabels = {{ client_labels|safe }};
+    const clientData = {{ client_data|safe }};
+    const trendLabels = {{ trend_labels|safe }};
+    const trendData = {{ trend_data|safe }};
+
+    // Nuevos datos para gráficos
+    const partnerDistributionLabels = {{ partner_distribution_labels|safe }};
+    const partnerDistributionData = {{ partner_distribution_data|safe }};
+    const unbilledLabels = {{ unbilled_labels|safe }};
+    const unbilledData = {{ unbilled_data|safe }};
+
+    // Chart.js Global Defaults for EY Theme
+    Chart.defaults.color = 'var(--ey-dark-grey)'; // Text color
+    Chart.defaults.borderColor = 'var(--ey-light-grey)'; // Axis and grid line color
+    Chart.defaults.font.family = 'Arial, sans-serif';
+
+    // Define a color palette for charts
+    const chartColors = [
+        'var(--ey-yellow)',
+        'var(--ey-blue)',
+        'var(--ey-green)',
+        'var(--ey-red)',
+        'var(--ey-purple)',
+        '#FF6384', // Pink
+        '#36A2EB', // Light Blue
+        '#FFCE56', // Orange
+        '#4BC0C0', // Teal
+        '#9966FF'  // Lavender
+    ];
+
+    // Area Chart
+    new Chart(document.getElementById('areaChart'), {
+        type: 'bar',
+        data: {
+            labels: areaLabels,
+            datasets: [{
+                label: 'Revenue',
+                data: areaData,
+                backgroundColor: chartColors[0],
+                borderColor: chartColors[0],
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: { color: 'var(--ey-dark-grey)' }
+                },
+                x: {
+                    ticks: { color: 'var(--ey-dark-grey)' }
+                }
+            },
+            plugins: {
+                legend: {
+                    labels: {
+                        color: 'var(--ey-dark-grey)'
+                    }
+                }
+            }
+        }
+    });
+
+    // Client Chart
+    new Chart(document.getElementById('clientChart'), {
+        type: 'bar',
+        data: {
+            labels: clientLabels,
+            datasets: [{
+                label: 'Revenue',
+                data: clientData,
+                backgroundColor: chartColors[1],
+                borderColor: chartColors[1],
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: { color: 'var(--ey-dark-grey)' }
+                },
+                x: {
+                    ticks: { color: 'var(--ey-dark-grey)' }
+                }
+            },
+            plugins: {
+                legend: {
+                    labels: {
+                        color: 'var(--ey-dark-grey)'
+                    }
+                }
+            }
+        }
+    });
+
+    // Trend Chart
+    new Chart(document.getElementById('trendChart'), {
+        type: 'line',
+        data: {
+            labels: trendLabels,
+            datasets: [{
+                label: 'Revenue',
+                data: trendData,
+                borderColor: chartColors[2],
+                backgroundColor: 'rgba(102, 153, 0, 0.2)',
+                borderWidth: 2,
+                fill: true
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: { color: 'var(--ey-dark-grey)' }
+                },
+                x: {
+                    ticks: { color: 'var(--ey-dark-grey)' }
+                }
+            },
+            plugins: {
+                legend: {
+                    labels: {
+                        color: 'var(--ey-dark-grey)'
+                    }
+                }
+            }
+        }
+    });
+
+    // Client Distribution by Partner (Pie Chart)
+    const pieChartColors = [
+        '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
+        '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'
+    ];
+    new Chart(document.getElementById('partnerDistributionChart'), {
+        type: 'pie',
+        data: {
+            labels: partnerDistributionLabels,
+            datasets: [{
+                label: 'Number of Clients',
+                data: partnerDistributionData,
+                backgroundColor: pieChartColors,
+                borderColor: 'var(--ey-white)',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    labels: {
+                        color: 'var(--ey-dark-grey)'
+                    }
+                }
+            }
+        }
+    });
+
+    // Unbilled Inventory by Service Line (Bar Chart)
+    new Chart(document.getElementById('unbilledInventoryChart'), {
+        type: 'bar',
+        data: {
+            labels: unbilledLabels,
+            datasets: [{
+                label: 'Unbilled Amount',
+                data: unbilledData,
+                backgroundColor: chartColors[3],
+                borderColor: chartColors[3],
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: { color: 'var(--ey-dark-grey)' }
+                },
+                x: {
+                    ticks: { color: 'var(--ey-dark-grey)' }
+                }
+            },
+            plugins: {
+                legend: {
+                    labels: {
+                        color: 'var(--ey-dark-grey)'
+                    }
+                }
+            }
+        }
+    });
+
+    // Pérdida por Tipo de Cambio
+    const lossPerDifferentialChartLabels = ['Pérdida Oficial', 'Pérdida Paralelo']; // Etiquetas para las dos barras
+    const lossPerDifferentialChartData = [
+        {% if loss_oficial_data %}{{ loss_oficial_data|floatformat:2 }}{% else %}0{% endif %},
+        {% if loss_paralelo_data %}{{ loss_paralelo_data|floatformat:2 }}{% else %}0{% endif %}
+    ];
+
+    new Chart(document.getElementById('lossPerDifferentialChart'), {
+        type: 'bar',
+        data: {
+            labels: lossPerDifferentialChartLabels,
+            datasets: [{
+                label: 'Monto de Pérdida',
+                data: lossPerDifferentialChartData,
+                backgroundColor: [chartColors[4], chartColors[0]], // Using purple and yellow
+                borderColor: [chartColors[4], chartColors[0]],
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: { color: 'var(--ey-dark-grey)' }
+                },
+                x: {
+                    ticks: { color: 'var(--ey-dark-grey)' }
+                }
+            },
+            plugins: {
+                legend: {
+                    labels: {
+                        color: 'var(--ey-dark-grey)'
+                    }
+                }
+            }
+        }
+    });
+</script>
+{% endblock %}

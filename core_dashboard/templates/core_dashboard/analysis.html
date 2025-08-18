@@ -1,0 +1,40 @@
+{% extends "core_dashboard/base.html" %}
+
+{% block content %}
+    <h1 class="section-title">Data Analysis</h1>
+
+    <div class="card mt-4">
+        <div class="card-header">Trends</div>
+        <div class="card-body">
+            {{ trends|safe }}
+        </div>
+    </div>
+
+    <div class="card mt-4">
+        <div class="card-header">Projections</div>
+        <div class="card-body">
+            {{ projections|safe }}
+        </div>
+    </div>
+
+    <div class="card mt-4">
+        <div class="card-header">Estimates</div>
+        <div class="card-body">
+            {{ estimations|safe }}
+        </div>
+    </div>
+
+    <div class="card mt-4">
+        <div class="card-header">Benchmarking</div>
+        <div class="card-body">
+            {{ expected_data|safe }}
+        </div>
+    </div>
+
+    <div class="card mt-4">
+        <div class="card-header">Competitive Landscape</div>
+        <div class="card-body">
+            {{ competitive_landscape|safe }}
+        </div>
+    </div>
+{% endblock %}

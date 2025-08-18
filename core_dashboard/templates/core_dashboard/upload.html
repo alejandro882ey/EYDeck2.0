@@ -1,0 +1,87 @@
+
+{% extends "core_dashboard/base.html" %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            {% if success_message %}
+                <div class="alert alert-success mt-3" role="alert">
+                    {{ success_message }}
+                </div>
+                <div class="card mt-3">
+                    <div class="card-header">
+                        <h3>Preview of Final_Database.csv (First 10 rows)</h3>
+                    </div>
+                    <div class="card-body">
+                        {{ df_html|safe }}
+                    </div>
+                </div>
+                <div class="text-center mt-3">
+                    <a href="{% url 'dashboard' %}" class="btn btn-primary">Go to Dashboard</a>
+                </div>
+            {% endif %}
+
+            {% if error_message %}
+                <div class="alert alert-danger mt-3" role="alert">
+                    {{ error_message }}
+                </div>
+            {% endif %}
+
+            <div class="card mt-5">
+                <div class="card-header">
+                    <h2>Upload Files</h2>
+                </div>
+                <div class="card-body">
+                    <form method="post" enctype="multipart/form-data">
+                        {% csrf_token %}
+                        <div class="mb-3">
+                            <label for="upload_date" class="form-label">Upload Date</label>
+                            <input class="form-control" type="date" id="upload_date" name="upload_date" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="engagement_df_file" class="form-label">Engagement File (.csv, .xls, .xlsx, .xlsb)</label>
+                            <input class="form-control" type="file" id="engagement_df_file" name="engagement_df_file" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="dif_df_file" class="form-label">Dif File (.csv, .xls, .xlsx, .xlsb)</label>
+                            <input class="form-control" type="file" id="dif_df_file" name="dif_df_file" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="revenue_days_file" class="form-label">Revenue Days File (.csv, .xls, .xlsx, .xlsb)</label>
+                            <input class="form-control" type="file" id="revenue_days_file" name="revenue_days_file" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Upload</button>
+                    </form>
+                </div>
+            </div>
+
+            <div class="card mt-5">
+                <div class="card-header">
+                    <h2>Upload History</h2>
+                </div>
+                <div class="card-body">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>File Name</th>
+                                <th>Uploaded At</th>
+                                <th>Uploaded By</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in history %}
+                            <tr>
+                                <td>{{ item.file_name }}</td>
+                                <td>{{ item.uploaded_at }}</td>
+                                <td>{{ item.uploaded_by.username }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
