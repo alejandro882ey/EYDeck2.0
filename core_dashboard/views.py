@@ -1,4 +1,4 @@
-# from django.contrib.auth.models import User
+
 
 # # Create users if they don't exist
 # if not User.objects.filter(username='admin').exists():
@@ -7,89 +7,27 @@
 #     User.objects.create_user('dev', password='dev')
 
 from django.shortcuts import render, redirect
-from django.contrib.auth import authenticate, login, logout
-from django.contrib.auth.forms import AuthenticationForm
-
-def custom_login_view(request):
-    if request.method == 'POST':
-        form = AuthenticationForm(request, data=request.POST)
-        if form.is_valid():
-            username = form.cleaned_data.get('username')
-            password = form.cleaned_data.get('password')
-            user = authenticate(username=username, password=password)
-            if user is not None:
-                login(request, user)
-                if username == 'dev':
-                    return redirect('upload_file')
-                else:
-                    return redirect('dashboard')
-    else:
-        form = AuthenticationForm()
-    return render(request, 'registration/login.html', {'form': form})
-
-def custom_logout_view(request):
-    logout(request)
-    return redirect('login')
-
-
-from core_dashboard.models import RevenueEntry, Client, Area, SubArea, Contract
-from django.db.models import Sum, Count, Q, F
-from django.db import models
-from django.db.models.functions import TruncWeek
+from django.db.models import Sum, Count, Q, F, ExpressionWrapper, DecimalField, FloatField
+from django.db.models.functions import TruncWeek, Coalesce
 from django.utils import timezone
 import datetime
 import json
-import requests # Import the requests library
-from django.http import JsonResponse # Import JsonResponse
-
-def get_dolarapi_rates():
-    try:
-        response = requests.get("https://ve.dolarapi.com/v1/dolares")
-        response.raise_for_status() # Raise an exception for HTTP errors
-        data = response.json()
-        oficial_rate = None
-        paralelo_rate = None
-        for rate_entry in data:
-            if rate_entry.get("fuente") == "oficial":
-                oficial_rate = rate_entry.get("promedio")
-            elif rate_entry.get("fuente") == "paralelo":
-                paralelo_rate = rate_entry.get("promedio")
-        print(f"DolarAPI Raw Data: {data}") # Debug print
-        print(f"Oficial Rate Found: {oficial_rate}") # Debug print
-        print(f"Paralelo Rate Found: {paralelo_rate}") # Debug print
-        return oficial_rate, paralelo_rate
-    except requests.exceptions.RequestException as e:
-        print(f"Error fetching DolarAPI rates: {e}")
-        return None, None
-
-# New API view for exchange rates
-def exchange_rates_api(request):
-    oficial_rate, paralelo_rate = get_dolarapi_rates()
-    data = {
-        'oficial_rate': oficial_rate,
-        'paralelo_rate': paralelo_rate,
-    }
-    return JsonResponse(data)
-
-from django.contrib.auth.decorators import login_required, user_passes_test
-
-def is_dev_user(user):
-    return user.username == 'dev'
-
-from .data_processor import process_uploaded_files
-from .models import UploadHistory
-from django.core.files.storage import FileSystemStorage
+import logging
 import pandas as pd
+import numpy as np
+from sklearn.linear_model import LinearRegression
+from ey_analytics_engine import fetch_all_data, generate_dashboard_analytics
+import plotly.graph_objects as go
 from django.conf import settings
 import os
 import traceback
-import datetime
-import subprocess # Import subprocess
+import subprocess
 
-ALLOWED_EXTENSIONS = {'.csv', '.xls', '.xlsx', '.xlsb'}
+from .data_processor import process_uploaded_files
+from .models import UploadHistory, RevenueEntry, Client, Area, SubArea, Contract, ExchangeRate
+from .utils import get_fiscal_month_year
 
-@login_required
-@user_passes_test(is_dev_user)
+
 def upload_file_view(request):
     history = UploadHistory.objects.all().order_by('-uploaded_at')
     if request.method == 'POST':
@@ -107,6 +45,7 @@ def upload_file_view(request):
                 raise ValueError("All three files are required.")
 
             # Validate file extensions
+            ALLOWED_EXTENSIONS = {'.csv', '.xls', '.xlsx', '.xlsb'}
             for f in [engagement_file, dif_file, revenue_days_file]:
                 ext = os.path.splitext(f.name)[1]
                 if ext.lower() not in ALLOWED_EXTENSIONS:
@@ -116,6 +55,7 @@ def upload_file_view(request):
             history_dir = os.path.join(settings.MEDIA_ROOT, 'historico_de_final_database', upload_date.strftime('%Y-%m-%d'))
             os.makedirs(history_dir, exist_ok=True)
 
+            from django.core.files.storage import FileSystemStorage
             fs = FileSystemStorage(location=history_dir)
 
             # Save files with new names
@@ -167,7 +107,7 @@ def upload_file_view(request):
             # Record the upload in history
             UploadHistory.objects.create(
                 file_name=f"Engagement_df_{upload_date_str}, Dif_df_{upload_date_str}, Revenue_days_{upload_date_str}",
-                uploaded_by=request.user
+                uploaded_by=None
             )
 
             df_html = final_database.head(10).to_html(classes='table table-dark table-striped table-hover', index=False)
@@ -183,18 +123,10 @@ def upload_file_view(request):
     return render(request, 'core_dashboard/upload.html', {'history': history})
 
 
-@login_required
 def tables_view(request):
     return render(request, 'core_dashboard/tables.html')
 
-import pandas as pd
-import numpy as np
-from sklearn.linear_model import LinearRegression
-# Import the new analytics engine
-from ey_analytics_engine import fetch_all_data, generate_dashboard_analytics
-import plotly.graph_objects as go
 
-@login_required
 def analysis_view(request):
     try:
         # 1. Fetch the data using the new engine
@@ -317,34 +249,106 @@ def analysis_view(request):
 
     return render(request, 'core_dashboard/analysis.html', context)
 
-@login_required
+
 def messaging_view(request):
-    # Get distinct sub-areas for messaging
-    sub_areas = SubArea.objects.values_list('name', flat=True).distinct().exclude(name__isnull=True).exclude(name__exact='').order_by('name')
-    context = {'sub_areas': sub_areas}
+    # Get distinct partners, managers, and areas for messaging
+    partners = RevenueEntry.objects.values_list('engagement_partner', flat=True).distinct().exclude(engagement_partner__isnull=True).exclude(Q(engagement_partner__exact='')).order_by('engagement_partner')
+    managers = RevenueEntry.objects.values_list('engagement_manager', flat=True).distinct().exclude(engagement_manager__isnull=True).exclude(Q(engagement_manager__exact='')).order_by('engagement_manager')
+    areas = Area.objects.values_list('name', flat=True).distinct().exclude(name__isnull=True).exclude(Q(name__exact='')).order_by('name')
+    context = {
+        'partners': partners,
+        'managers': managers,
+        'areas': areas
+    }
     return render(request, 'core_dashboard/messaging.html', context)
 
-@login_required
+
 def dashboard_view(request):
     # Get filter parameters from request
     selected_partner = request.GET.get('partner')
     selected_manager = request.GET.get('manager')
-    selected_area = request.GET.get('area')
-    selected_sub_area = request.GET.get('sub_area')
+    selected_area = request.GET.get('service_line')
+    selected_sub_area = request.GET.get('sub_service_line')
     selected_client = request.GET.get('client')
     selected_week_filter = request.GET.get('week') # Renamed to avoid conflict
 
-    # Get the most recent date from all RevenueEntry objects
-    latest_entry = RevenueEntry.objects.all().order_by('-date').first()
-    latest_date = latest_entry.date if latest_entry else None
+    print(f"DEBUG: selected_partner: {selected_partner}")
+    print(f"DEBUG: selected_manager: {selected_manager}")
+    print(f"DEBUG: selected_area: {selected_area}")
+    print(f"DEBUG: selected_sub_area: {selected_sub_area}")
+    print(f"DEBUG: selected_client: {selected_client}")
+    print(f"DEBUG: selected_week_filter: {selected_week_filter}")
+    print(f"DEBUG: selected_partner: {selected_partner}")
+    print(f"DEBUG: selected_manager: {selected_manager}")
+    print(f"DEBUG: selected_area: {selected_area}")
+    print(f"DEBUG: selected_sub_area: {selected_sub_area}")
+    print(f"DEBUG: selected_client: {selected_client}")
+    print(f"DEBUG: selected_week_filter: {selected_week_filter}")
 
     # Queryset for historical trend (uses all data)
     all_revenue_entries = RevenueEntry.objects.all()
 
     # Base queryset for KPIs. Start with all entries.
-    revenue_entries_for_kpis = RevenueEntry.objects.all()
+    base_revenue_entries = RevenueEntry.objects.all()
 
-    # Apply user filters to KPI-specific queryset
+    # Get distinct weeks for filtering, formatted to Friday's date
+    available_weeks_raw = RevenueEntry.objects.annotate(calculated_week=TruncWeek('date')).values_list('calculated_week', flat=True).distinct().order_by('calculated_week')
+    available_weeks = []
+    for week_start_date in available_weeks_raw:
+        if week_start_date:
+            # Calculate Friday's date for the week (assuming week starts on Monday)
+            # Monday (0) to Sunday (6). Friday is 4.
+            # If week_start_date is Monday, add 4 days to get Friday.
+            friday_date = week_start_date + datetime.timedelta(days=4)
+            available_weeks.append(friday_date.strftime('%Y-%m-%d'))
+
+    # Date filtering logic for the entire page
+    if selected_week_filter:
+        friday_date = datetime.datetime.strptime(selected_week_filter, '%Y-%m-%d').date()
+        start_of_week = friday_date - datetime.timedelta(days=friday_date.weekday())
+        end_of_week = start_of_week + datetime.timedelta(days=6)
+        base_revenue_entries = base_revenue_entries.filter(date__range=[start_of_week, end_of_week])
+    elif available_weeks:
+        # Default to the most recent week if no week is selected
+        most_recent_week = available_weeks[-1]
+        friday_date = datetime.datetime.strptime(most_recent_week, '%Y-%m-%d').date()
+        print(f"DEBUG: base_revenue_entries count after week filter: {base_revenue_entries.count()}")
+        start_of_week = friday_date - datetime.timedelta(days=friday_date.weekday())
+        end_of_week = start_of_week + datetime.timedelta(days=6)
+        base_revenue_entries = base_revenue_entries.filter(date__range=[start_of_week, end_of_week])
+    else:
+        base_revenue_entries = RevenueEntry.objects.none()
+    print(f"DEBUG: base_revenue_entries count after week filter: {base_revenue_entries.count()}")
+
+    # --- Macro Section Calculations (always on the full dataset for the selected date) ---
+    macro_revenue_entries = base_revenue_entries
+    if selected_area:
+        macro_revenue_entries = macro_revenue_entries.filter(area__name=selected_area)
+    if selected_sub_area:
+        macro_revenue_entries = macro_revenue_entries.filter(sub_area__name=selected_sub_area)
+    if selected_client:
+        macro_revenue_entries = macro_revenue_entries.filter(client__name=selected_client)
+    
+    macro_total_clients = macro_revenue_entries.values('client').distinct().count()
+    macro_ansr_fytd = macro_revenue_entries.aggregate(Sum('fytd_ansr_amt'))['fytd_ansr_amt__sum'] or 0
+    macro_total_direct_cost = macro_revenue_entries.aggregate(Sum('fytd_direct_cost_amt'))['fytd_direct_cost_amt__sum'] or 0
+    macro_margin = macro_ansr_fytd - macro_total_direct_cost
+    macro_margin_percentage = (macro_margin / macro_ansr_fytd * 100) if macro_ansr_fytd else 0
+    macro_total_charged_hours = macro_revenue_entries.aggregate(Sum('fytd_charged_hours'))['fytd_charged_hours__sum'] or 0
+    macro_rph = (macro_ansr_fytd / macro_total_charged_hours) if macro_total_charged_hours else 0
+    macro_mtd_charged_hours = macro_revenue_entries.aggregate(Sum('mtd_charged_hours'))['mtd_charged_hours__sum'] or 0
+    macro_monthly_tracker = macro_mtd_charged_hours * macro_rph
+    total_mtd_charged_hours = macro_revenue_entries.aggregate(Sum('mtd_charged_hours'))['mtd_charged_hours__sum'] or 0
+    total_fytd_charged_hours = macro_revenue_entries.aggregate(Sum('fytd_charged_hours'))['fytd_charged_hours__sum'] or 0
+    macro_diferencial_final = macro_revenue_entries.aggregate(Sum('fytd_diferencial_final'))['fytd_diferencial_final__sum'] or 0
+
+    # Sum of 'fytd_diferencial_final' per partner
+    diferencial_final_by_partner = base_revenue_entries.values('engagement_partner').annotate(
+        total_diferencial_final=Coalesce(Sum('fytd_diferencial_final'), 0.0)
+    ).order_by('-total_diferencial_final')
+
+    # --- Filtered Section (for partner/manager specific views) ---
+    revenue_entries_for_kpis = base_revenue_entries
     if selected_partner:
         revenue_entries_for_kpis = revenue_entries_for_kpis.filter(engagement_partner=selected_partner)
     if selected_manager:
@@ -355,37 +359,61 @@ def dashboard_view(request):
         revenue_entries_for_kpis = revenue_entries_for_kpis.filter(sub_area__name=selected_sub_area)
     if selected_client:
         revenue_entries_for_kpis = revenue_entries_for_kpis.filter(client__name=selected_client)
+    print(f"DEBUG: revenue_entries_for_kpis count after all filters: {revenue_entries_for_kpis.count()}")
+    print(f"DEBUG: revenue_entries_for_kpis first entry: {revenue_entries_for_kpis.first()}")
 
-    # Date filtering logic
-    if selected_week_filter:
-        # The filter gives us the Friday of the week.
-        friday_date = datetime.datetime.strptime(selected_week_filter, '%Y-%m-%d').date()
-        # weekday() returns 0 for Monday and 6 for Sunday. Friday is 4.
-        start_of_week = friday_date - datetime.timedelta(days=friday_date.weekday())
-        end_of_week = start_of_week + datetime.timedelta(days=6)
-        revenue_entries_for_kpis = revenue_entries_for_kpis.filter(date__range=[start_of_week, end_of_week])
-    else:
-        # If no week is selected, default to the latest date with data.
-        if latest_date:
-            revenue_entries_for_kpis = revenue_entries_for_kpis.filter(date=latest_date)
-        else:
-            revenue_entries_for_kpis = RevenueEntry.objects.none() # No data at all
-
-    # KPIs
+    # KPIs for the filtered view
     ansr_sintetico = "${:,.2f}".format(revenue_entries_for_kpis.aggregate(Sum('revenue'))['revenue__sum'] or 0)
     total_clients = "{:,.0f}".format(revenue_entries_for_kpis.values('client').distinct().count())
     total_engagements = "{:,.0f}".format(revenue_entries_for_kpis.values('contract').distinct().count())
 
-    # --- Macro Section Calculations ---
-    macro_total_clients = revenue_entries_for_kpis.values('client').distinct().count()
-    macro_total_ansr_sintetico = revenue_entries_for_kpis.aggregate(Sum('fytd_ansr_sintetico'))['fytd_ansr_sintetico__sum'] or 0
-    macro_total_direct_cost = revenue_entries_for_kpis.aggregate(Sum('fytd_direct_cost_amt'))['fytd_direct_cost_amt__sum'] or 0
-    macro_margin = macro_total_ansr_sintetico - macro_total_direct_cost
-    macro_margin_percentage = (macro_margin / macro_total_ansr_sintetico * 100) if macro_total_ansr_sintetico else 0
-    macro_total_charged_hours = revenue_entries_for_kpis.aggregate(Sum('fytd_charged_hours'))['fytd_charged_hours__sum'] or 0
-    macro_rph = (macro_total_ansr_sintetico / macro_total_charged_hours) if macro_total_charged_hours else 0
-    macro_mtd_charged_hours = revenue_entries_for_kpis.aggregate(Sum('mtd_charged_hours'))['mtd_charged_hours__sum'] or 0
-    macro_monthly_tracker = macro_mtd_charged_hours * macro_rph
+    # Charged hours by partner and manager (based on the filtered data)
+    fytd_charged_hours_by_partner = revenue_entries_for_kpis.values('engagement_partner').annotate(
+        total_fytd_charged_hours=Sum('fytd_charged_hours')
+    ).order_by('-total_fytd_charged_hours')
+
+    mtd_charged_hours_by_partner = revenue_entries_for_kpis.values('engagement_partner').annotate(
+        total_mtd_charged_hours=Sum('mtd_charged_hours')
+    ).order_by('-total_mtd_charged_hours')
+
+    fytd_charged_hours_by_manager = revenue_entries_for_kpis.values('engagement_manager').annotate(
+        total_fytd_charged_hours=Sum('fytd_charged_hours')
+    ).order_by('-total_fytd_charged_hours')
+
+    mtd_charged_hours_by_manager = revenue_entries_for_kpis.values('engagement_manager').annotate(
+        total_mtd_charged_hours=Sum('mtd_charged_hours')
+    ).order_by('-total_mtd_charged_hours')
+
+    # Add FYTD_ChargedHours and MTD_Charged to the partner filter
+    # This will be used in the template to display the data
+    fytd_charged_hours_by_partner_with_labels = []
+    mtd_charged_hours_by_partner_with_labels = []
+
+    for partner in fytd_charged_hours_by_partner:
+        fytd_charged_hours_by_partner_with_labels.append({
+            'engagement_partner': partner['engagement_partner'],
+            'total_fytd_charged_hours': partner['total_fytd_charged_hours'],
+            'label': 'Horas Cargadas (FYTD)'
+        })
+
+    for partner in mtd_charged_hours_by_partner:
+        mtd_charged_hours_by_partner_with_labels.append({
+            'engagement_partner': partner['engagement_partner'],
+            'total_mtd_charged_hours': partner['total_mtd_charged_hours'],
+            'label': 'Horas Cargadas (MTD)'
+        })
+
+    # --- All Partners Ranked (for flip card) ---
+    all_partners_ranked = base_revenue_entries.values('engagement_partner').annotate(
+        total_revenue=Sum('revenue')
+    ).order_by('-total_revenue').exclude(engagement_partner__isnull=True).exclude(engagement_partner__exact='')
+    for p in all_partners_ranked:
+        p['total_revenue'] = "${:,.2f}".format(p['total_revenue'] or 0)
+
+    # Get all FYTD charged hours by partner to merge with the ranked list
+    all_fytd_charged_hours_by_partner = base_revenue_entries.values('engagement_partner').annotate(
+        total_fytd_charged_hours=Sum('fytd_charged_hours')
+    ).order_by('engagement_partner')
 
     # Calculate FYTD, MTD, and Daily Revenue
     today = timezone.now().date()
@@ -409,30 +437,30 @@ def dashboard_view(request):
     ).order_by('-total_revenue').exclude(engagement_partner__isnull=True).exclude(engagement_partner__exact='')[:5]
     # Format revenue for top_partners
     for p in top_partners:
-        p['total_revenue'] = "${:,.2f}".format(p['total_revenue'])
+        p['total_revenue'] = "${:,.2f}".format(p['total_revenue'] or 0)
 
     # Top 5 Clients by Revenue (for table display)
     top_clients_table = revenue_entries_for_kpis.values('client__name').annotate(total_revenue=Sum('revenue')).order_by('-total_revenue')[:5]
     # Format revenue for top_clients_table
     for c in top_clients_table:
-        c['total_revenue'] = "${:,.2f}".format(c['total_revenue'])
+        c['total_revenue'] = "${:,.2f}".format(c['total_revenue'] or 0)
 
     # Calculate "Loss per differential"
     # Assuming 'bcv_rate' and 'monitor_rate' are fields in RevenueEntry
     # Loss = (BCV Rate - Monitor Rate) * Revenue
     loss_per_differential = "${:,.2f}".format(revenue_entries_for_kpis.annotate(
-        differential_loss=(F('bcv_rate') - F('monitor_rate')) * F('revenue')
+        differential_loss=ExpressionWrapper((F('bcv_rate') - F('monitor_rate')) * F('revenue'), output_field=DecimalField())
     ).aggregate(Sum('differential_loss'))['differential_loss__sum'] or 0)
 
     # Revenue by Area
     revenue_by_area = revenue_entries_for_kpis.values('area__name').annotate(total_revenue=Sum('revenue')).order_by('-total_revenue')
     area_labels = [item['area__name'] for item in revenue_by_area]
-    area_data = [float(item['total_revenue']) for item in revenue_by_area]
+    area_data = [float(item['total_revenue'] or 0) for item in revenue_by_area]
 
     # Top 5 Clients by Revenue (for chart)
     top_clients_chart = revenue_entries_for_kpis.values('client__name').annotate(total_revenue=Sum('revenue')).order_by('-total_revenue')[:5]
     client_labels = [item['client__name'] for item in top_clients_chart]
-    client_data = [float(item['total_revenue']) for item in top_clients_chart]
+    client_data = [float(item['total_revenue'] or 0) for item in top_clients_chart]
 
     # Revenue Trend by Date (calculating daily revenue in Python)
     import pandas as pd
@@ -480,7 +508,7 @@ def dashboard_view(request):
     recent_entries = all_revenue_entries.select_related('client', 'area').order_by('-date')[:10] # Get last 10 entries
     # Format revenue for recent_entries
     for entry in recent_entries:
-        entry.revenue_formatted = "${:,.2f}".format(entry.revenue)
+        entry.revenue_formatted = "${:,.2f}".format(entry.revenue or 0)
 
     # Get distinct values for filters, excluding None and empty strings
     partners = RevenueEntry.objects.values_list('engagement_partner', flat=True).distinct().exclude(engagement_partner__isnull=True).exclude(Q(engagement_partner__exact='')).order_by('engagement_partner')
@@ -488,17 +516,6 @@ def dashboard_view(request):
     areas = Area.objects.values_list('name', flat=True).distinct().exclude(name__isnull=True).exclude(Q(name__exact='')).order_by('name')
     sub_areas = SubArea.objects.values_list('name', flat=True).distinct().exclude(name__isnull=True).exclude(Q(name__exact='')).order_by('name')
     clients = Client.objects.values_list('name', flat=True).distinct().exclude(name__isnull=True).exclude(Q(name__exact='')).order_by('name')
-
-    # Get distinct weeks for filtering, formatted to Friday's date
-    available_weeks_raw = RevenueEntry.objects.annotate(calculated_week=TruncWeek('date')).values_list('calculated_week', flat=True).distinct().order_by('calculated_week')
-    available_weeks = []
-    for week_start_date in available_weeks_raw:
-        if week_start_date:
-            # Calculate Friday's date for the week (assuming week starts on Monday)
-            # Monday (0) to Sunday (6). Friday is 4.
-            # If week_start_date is Monday, add 4 days to get Friday.
-            friday_date = week_start_date + datetime.timedelta(days=4)
-            available_weeks.append(friday_date.strftime('%Y-%m-%d'))
 
     # Placeholder for highlights/news ticker
     highlights = [
@@ -512,7 +529,7 @@ def dashboard_view(request):
 
     # --- Macro Section Calculations ---
     macro_total_clients = revenue_entries_for_kpis.values('client').distinct().count()
-    macro_total_ansr_sintetico = revenue_entries_for_kpis.aggregate(Sum('fytd_ansr_sintetico'))['fytd_ansr_sintetico__sum'] or 0
+    macro_total_ansr_sintetico = revenue_entries_for_kpis.aggregate(Sum('fytd_ansr_amt'))['fytd_ansr_amt__sum'] or 0
     macro_total_direct_cost = revenue_entries_for_kpis.aggregate(Sum('fytd_direct_cost_amt'))['fytd_direct_cost_amt__sum'] or 0
     macro_margin = macro_total_ansr_sintetico - macro_total_direct_cost
     macro_margin_percentage = (macro_margin / macro_total_ansr_sintetico * 100) if macro_total_ansr_sintetico else 0
@@ -535,8 +552,8 @@ def dashboard_view(request):
     # 2. Cartera en moneda extranjera (usando fytd_diferencial_final)
     cartera_moneda_extranjera = "${:,.2f}".format(revenue_entries_for_kpis.aggregate(Sum('fytd_diferencial_final'))['fytd_diferencial_final__sum'] or 0)
 
-    # 3. Cartera local ajustada (usando fytd_ansr_sintetico)
-    cartera_local_ajustada = "${:,.2f}".format(revenue_entries_for_kpis.aggregate(Sum('fytd_ansr_sintetico'))['fytd_ansr_sintetico__sum'] or 0)
+    # 3. Cartera local ajustada (usando fytd_ansr_amt)
+    cartera_local_ajustada = "${:,.2f}".format(revenue_entries_for_kpis.aggregate(Sum('fytd_ansr_amt'))['fytd_ansr_amt__sum'] or 0)
 
     # 4. Total CXC (asumiendo que es la suma de billing - collections, o solo billing si no hay un campo de CXC explícito)
     # Si tienes un campo de CXC directo, por favor, indícalo.
@@ -549,67 +566,201 @@ def dashboard_view(request):
     # 6. Unbilled Inventory por Service Line
     # Asumiendo que Unbilled Inventory = FYTD_ANSRAmt - Collections
     unbilled_inventory_by_service_line = revenue_entries_for_kpis.values('engagement_service_line').annotate(
-        unbilled_amount=Sum(F('fytd_ansr_amt') - F('collections'), output_field=models.FloatField())
+        unbilled_amount=Sum(ExpressionWrapper(F('fytd_ansr_amt') - F('collections'), output_field=FloatField()))
     ).order_by('-unbilled_amount').exclude(engagement_service_line__isnull=True).exclude(engagement_service_line__exact='')
 
     unbilled_labels = [item['engagement_service_line'] for item in unbilled_inventory_by_service_line]
-    unbilled_data = [float(item['unbilled_amount']) if item['unbilled_amount'] is not None else 0.0 for item in unbilled_inventory_by_service_line]
+    unbilled_data = [float(item['unbilled_amount'] or 0) for item in unbilled_inventory_by_service_line]
 
     # 7. Anticipos (requiere un campo específico para anticipos)
     # Por ahora, es un placeholder. Necesito más información sobre cómo calcularlo.
     total_anticipos = "N/A" # Placeholder
 
-    # Fetch exchange rates
-    oficial_rate, paralelo_rate = get_dolarapi_rates()
-
-    # Calculate loss per differential for Oficial and Paralelo rates
-    # Assuming 'bcv_rate' and 'monitor_rate' from RevenueEntry are the rates used in the original transaction
-    # And we want to compare them against the current 'oficial_rate' and 'paralelo_rate' from DolarAPI
-    # For now, using a placeholder calculation based on fytd_ansr_amt
-    loss_oficial_data = "${:,.2f}".format(revenue_entries_for_kpis.aggregate(
-        total_loss=Sum(F('fytd_ansr_amt') * (oficial_rate - F('bcv_rate')), output_field=models.FloatField())
-    )['total_loss'] or 0) if oficial_rate else "N/A"
-
-    loss_paralelo_data = "${:,.2f}".format(revenue_entries_for_kpis.aggregate(
-        total_loss=Sum(F('fytd_ansr_amt') * (paralelo_rate - F('monitor_rate')), output_field=models.FloatField())
-    )['total_loss'] or 0) if paralelo_rate else "N/A"
-
     # --- Partner Specification Section ---
     partner_spec_data = None
     if selected_partner:
-        # These are the entries for the selected partner, filtered by the latest date.
-        # Note: revenue_entries_for_kpis is already filtered by the latest date if no week is selected.
+        print(f"DEBUG: Entering partner_spec_data block for partner: {selected_partner}")
         partner_revenue_entries = revenue_entries_for_kpis
+        print(f"DEBUG: partner_revenue_entries count: {partner_revenue_entries.count()}")
+        print(f"DEBUG: partner_revenue_entries first entry: {partner_revenue_entries.first()}")
 
         partner_spec_num_engagements = partner_revenue_entries.values('contract').distinct().count()
         partner_spec_num_clients = partner_revenue_entries.values('client').distinct().count()
-        partner_spec_client_list = list(partner_revenue_entries.values_list('client__name', flat=True).distinct())
 
-        # Fetch Total Revenue Days P CP from the database for the latest date
-        # Get the first entry for the partner to get the unique revenue days value
+        # Get client list with their revenue for the selected partner
+        client_list_with_revenue = partner_revenue_entries.values('client__name').annotate(
+            total_revenue=Sum('revenue')
+        ).order_by('-total_revenue')
+
+        # Format revenue for the client list
+        formatted_client_list = [
+            {
+                'name': item['client__name'],
+                'revenue': "${:,.2f}".format(item['total_revenue'] or 0)
+            }
+            for item in client_list_with_revenue
+        ]
+
         first_entry = partner_revenue_entries.first()
         revenue_days_val = first_entry.total_revenue_days_p_cp if first_entry else 0
+
+        # Partner-specific ANSR FYTD and MTD
+        partner_fytd_ansr_value = partner_revenue_entries.aggregate(Sum('fytd_ansr_amt'))['fytd_ansr_amt__sum'] or 0
+        partner_mtd_ansr_value = partner_revenue_entries.aggregate(Sum('mtd_ansr_amt'))['mtd_ansr_amt__sum'] or 0
+
+        # Goals for partner-specific ANSR
+        partner_fytd_ansr_goal = 0
+        partner_mtd_ansr_goal = 0
+        partner_fytd_ansr_completion_percentage = 0
+        partner_mtd_ansr_completion_percentage = 0
+
+        try:
+            metas_pped_path = os.path.join(settings.BASE_DIR, 'metas_PPED.csv')
+            if os.path.exists(metas_pped_path):
+                metas_pped_df = pd.read_csv(metas_pped_path)
+                # Normalize partner names in DataFrame
+                metas_pped_df['Partner'] = metas_pped_df['Partner'].str.strip().str.lower()
+
+                # Normalize selected_partner for comparison
+                normalized_selected_partner = selected_partner.strip().lower() if selected_partner else ''
+
+                # Debug: Print available partners in CSV
+                print(f"DEBUG: Available partners in CSV: {metas_pped_df['Partner'].unique()}")
+                print(f"DEBUG: Looking for partner: {normalized_selected_partner}")
+
+                # Get yearly goal for the selected partner
+                partner_yearly_goal_rows = metas_pped_df[
+                    (metas_pped_df['Partner'].str.contains(normalized_selected_partner, case=False, na=False)) &
+                    (metas_pped_df['Mes'] == 'Total')
+                ]
+                if not partner_yearly_goal_rows.empty:
+                    partner_fytd_ansr_goal = partner_yearly_goal_rows['ANSR Goal PPED'].sum()
+                    partner_fytd_hours_goal = partner_yearly_goal_rows['Horas Goal PPED'].sum()
+                    print(f"DEBUG: Found FYTD goal for {normalized_selected_partner}: {partner_fytd_ansr_goal}")
+                    print(f"DEBUG: Found FYTD hours goal for {normalized_selected_partner}: {partner_fytd_hours_goal}")
+                else:
+                    partner_fytd_hours_goal = 0
+                    print(f"DEBUG: No FYTD goal found for {normalized_selected_partner}")
+
+                # Get monthly goal for the selected partner based on fiscal month
+                current_report_date = None
+                if selected_week_filter:
+                    current_report_date = datetime.datetime.strptime(selected_week_filter, '%Y-%m-%d').date()
+                elif available_weeks:
+                    current_report_date = datetime.datetime.strptime(available_weeks[-1], '%Y-%m-%d').date()
+
+                if current_report_date:
+                    fiscal_month_name_for_goal = get_fiscal_month_year(current_report_date)
+                    partner_monthly_goal_rows = metas_pped_df[
+                        (metas_pped_df['Partner'].str.contains(normalized_selected_partner, case=False, na=False)) &
+                        (metas_pped_df['Mes'] == fiscal_month_name_for_goal)
+                    ]
+                    if not partner_monthly_goal_rows.empty:
+                        partner_mtd_ansr_goal = partner_monthly_goal_rows['ANSR Goal PPED'].sum()
+                        partner_mtd_hours_goal = partner_monthly_goal_rows['Horas Goal PPED'].sum()
+                        print(f"DEBUG: Found MTD goal for {normalized_selected_partner} in {fiscal_month_name_for_goal}: {partner_mtd_ansr_goal}")
+                        print(f"DEBUG: Found MTD hours goal for {normalized_selected_partner} in {fiscal_month_name_for_goal}: {partner_mtd_hours_goal}")
+                    else:
+                        partner_mtd_hours_goal = 0
+                        print(f"DEBUG: No MTD goal found for {normalized_selected_partner} in {fiscal_month_name_for_goal}")
+
+            # Calculate completion percentages for partner
+            if partner_fytd_ansr_goal > 0:
+                partner_fytd_ansr_completion_percentage = (partner_fytd_ansr_value / partner_fytd_ansr_goal) * 100
+            if partner_mtd_ansr_goal > 0:
+                partner_mtd_ansr_completion_percentage = (partner_mtd_ansr_value / partner_mtd_ansr_goal) * 100
+
+            # Calculate charged hours completion percentages
+            partner_fytd_hours_completion_percentage = 0
+            partner_mtd_hours_completion_percentage = 0
+
+            # Get partner's actual charged hours
+            partner_fytd_charged_hours = partner_revenue_entries.aggregate(Sum('fytd_charged_hours'))['fytd_charged_hours__sum'] or 0
+            partner_mtd_charged_hours = partner_revenue_entries.aggregate(Sum('mtd_charged_hours'))['mtd_charged_hours__sum'] or 0
+
+            if partner_fytd_hours_goal > 0:
+                partner_fytd_hours_completion_percentage = (partner_fytd_charged_hours / partner_fytd_hours_goal) * 100
+            if partner_mtd_hours_goal > 0:
+                partner_mtd_hours_completion_percentage = (partner_mtd_charged_hours / partner_mtd_hours_goal) * 100
+
+            # Add goals per partner using the same format as ANSR information but with metas_PPED data
+            partner_spec_data['partner_fytd_hours_goal'] = partner_fytd_hours_goal
+            partner_spec_data['partner_mtd_hours_goal'] = partner_mtd_hours_goal
+            partner_spec_data['partner_fytd_hours_completion_percentage'] = partner_fytd_hours_completion_percentage
+            partner_spec_data['partner_mtd_hours_completion_percentage'] = partner_mtd_hours_completion_percentage
+
+        except Exception as e:
+            print(f"Error processing partner goals: {e}")
+            traceback.print_exc()
 
         partner_spec_data = {
             'num_engagements': partner_spec_num_engagements,
             'num_clients': partner_spec_num_clients,
-            'client_list': partner_spec_client_list,
-            'revenue_days': f"{revenue_days_val:,.2f}", # Formatting the value
+            'client_list': formatted_client_list, # Use the new formatted list
+            'revenue_days': f"{revenue_days_val:,.2f}",
+            'partner_fytd_ansr_value': partner_fytd_ansr_value,
+            'partner_fytd_ansr_goal': partner_fytd_ansr_goal,
+            'partner_fytd_ansr_completion_percentage': partner_fytd_ansr_completion_percentage,
+            'partner_mtd_ansr_value': partner_mtd_ansr_value,
+            'partner_mtd_ansr_goal': partner_mtd_ansr_goal,
+            'partner_mtd_ansr_completion_percentage': partner_mtd_ansr_completion_percentage,
+            'partner_fytd_charged_hours': partner_fytd_charged_hours,
+            'partner_fytd_hours_goal': partner_fytd_hours_goal,
+            'partner_fytd_hours_completion_percentage': partner_fytd_hours_completion_percentage,
+            'partner_mtd_charged_hours': partner_mtd_charged_hours,
+            'partner_mtd_hours_goal': partner_mtd_hours_goal,
+            'partner_mtd_hours_completion_percentage': partner_mtd_hours_completion_percentage,
         }
 
         if selected_client:
-            # Entries for the selected client (already filtered by partner)
             client_revenue_entries = partner_revenue_entries.filter(client__name=selected_client)
-            
-            # Calculate MTD ANSR Sintetico for the selected client
             current_month_start = timezone.now().date().replace(day=1)
-            mtd_ansr_sintetico = client_revenue_entries.filter(date__gte=current_month_start).aggregate(
-                Sum('fytd_ansr_sintetico')
-            )['fytd_ansr_sintetico__sum'] or 0
-            
-            partner_spec_data['mtd_ansr_sintetico'] = "${:,.2f}".format(mtd_ansr_sintetico)
+            mtd_ansr_amt = client_revenue_entries.filter(date__gte=current_month_start).aggregate(
+                Sum('mtd_ansr_amt')
+            )['mtd_ansr_amt__sum'] or 0
+            partner_spec_data['mtd_ansr_amt'] = "${:,.2f}".format(mtd_ansr_amt)
+
+        # --- New Perdida Diferencial Calculations for Partner View ---
+        # 1. Total Perdida Diferencial for the partner
+        partner_perdida_diferencial = partner_revenue_entries.aggregate(
+            total_perdida=Sum('fytd_diferencial_final')
+        )['total_perdida'] or 0
+        partner_spec_data['total_perdida_diferencial'] = "${:,.2f}".format(partner_perdida_diferencial)
+
+        # 2. Perdida Diferencial per Client for the partner
+        perdida_per_client = partner_revenue_entries.values('client__name').annotate(
+            perdida=Sum('fytd_diferencial_final')
+        ).order_by('-perdida')
+        partner_spec_data['perdida_per_client'] = [
+            {'client_name': item['client__name'], 'perdida': "${:,.2f}".format(item['perdida'] or 0)}
+            for item in perdida_per_client
+        ]
+
+        # 3. Top 5 Engagements by Perdida Diferencial for the partner
+        top_engagements_perdida = partner_revenue_entries.values('contract__name').annotate(
+            perdida=Sum('fytd_diferencial_final')
+        ).order_by('-perdida')[:5]
+        partner_spec_data['top_engagements_perdida'] = [
+            {'engagement_name': item['contract__name'], 'perdida': "${:,.2f}".format(item['perdida'] or 0)}
+            for item in top_engagements_perdida
+        ]
+
+    # Fetch historical exchange rates for charting
+    exchange_rates_data = ExchangeRate.objects.all().order_by('date')
+    exchange_dates = [er.date.strftime('%Y-%m-%d') for er in exchange_rates_data]
+    oficial_rates_history = [float(er.oficial_rate) if er.oficial_rate else None for er in exchange_rates_data]
+    paralelo_rates_history = [float(er.paralelo_rate) if er.paralelo_rate else None for er in exchange_rates_data]
+    differential_history = [float(er.differential) if er.differential else None for er in exchange_rates_data]
 
     context = {
+        'total_fytd_charged_hours': "{:,.0f}".format(total_fytd_charged_hours),
+        'total_mtd_charged_hours': "{:,.0f}".format(total_mtd_charged_hours),
+        'fytd_charged_hours_by_partner': fytd_charged_hours_by_partner,
+        'mtd_charged_hours_by_partner': mtd_charged_hours_by_partner,
+        'fytd_charged_hours_by_manager': fytd_charged_hours_by_manager,
+        'mtd_charged_hours_by_manager': mtd_charged_hours_by_manager,
+        'fytd_charged_hours_by_partner_with_labels': fytd_charged_hours_by_partner_with_labels,
+        'mtd_charged_hours_by_partner_with_labels': mtd_charged_hours_by_partner_with_labels,
         'ansr_sintetico': ansr_sintetico,
         'total_clients': total_clients,
         'total_engagements': total_engagements,
@@ -659,19 +810,186 @@ def dashboard_view(request):
 
         # Macro Section Data
         'macro_total_clients': "{:,.0f}".format(macro_total_clients),
-        'macro_total_ansr_sintetico': "${:,.2f}".format(macro_total_ansr_sintetico),
+        'macro_total_ansr_sintetico': macro_total_ansr_sintetico,
         'macro_margin': "${:,.2f}".format(macro_margin),
         'macro_margin_percentage': "{:.2f}%".format(macro_margin_percentage),
         'macro_rph': "${:,.2f}".format(macro_rph),
-        'macro_monthly_tracker': "${:,.2f}".format(macro_monthly_tracker),
+        'macro_monthly_tracker': macro_monthly_tracker,
+        'total_fytd_charged_hours': "{:,.0f}".format(total_fytd_charged_hours),
+        'total_mtd_charged_hours': "{:,.0f}".format(total_mtd_charged_hours),
+        'macro_diferencial_final': macro_diferencial_final,
 
-        # Exchange rates
-        'oficial_rate': oficial_rate,
-        'paralelo_rate': paralelo_rate,
+        # New context for flip card
+        'all_partners_ranked': all_partners_ranked,
+        'all_fytd_charged_hours_by_partner': all_fytd_charged_hours_by_partner,
 
-        # Loss per differential breakdown
-        'loss_oficial_data': loss_oficial_data,
-        'loss_paralelo_data': loss_paralelo_data,
+        # New: Accumulated sums for MTD_ChargedHours and FYTD_ChargedHours
+        'total_mtd_charged_hours': "{:,.0f}".format(total_mtd_charged_hours),
+        'total_fytd_charged_hours': "{:,.0f}".format(total_fytd_charged_hours),
+
+        # New: Accumulated sums for MTD_ChargedHours and FYTD_ChargedHours
+        'total_mtd_charged_hours': "{:,.0f}".format(total_mtd_charged_hours),
+        'total_fytd_charged_hours': "{:,.0f}".format(total_fytd_charged_hours),
+
         'partner_spec_data': partner_spec_data,
+
+        # Exchange Rate History for Chart
+        'exchange_dates': json.dumps(exchange_dates),
+        'oficial_rates_history': json.dumps(oficial_rates_history),
+        'paralelo_rates_history': json.dumps(paralelo_rates_history),
+        'differential_history': json.dumps(differential_history),
+        'diferencial_final_by_partner': diferencial_final_by_partner,
     }
+    # --- Goals Calculation ---
+    ansr_fytd_goal = 0
+    ansr_mtd_goal = 0
+    ansr_fytd_completion_percentage = 0
+    ansr_mtd_completion_percentage = 0
+
+    try:
+        metas_sl_path = os.path.join(settings.BASE_DIR, 'metas_SL.csv')
+        if os.path.exists(metas_sl_path):
+            metas_sl_df = pd.read_csv(metas_sl_path)
+
+            # Determine the current report date
+            current_report_date = None
+            if selected_week_filter:
+                current_report_date = datetime.datetime.strptime(selected_week_filter, '%Y-%m-%d').date()
+            elif available_weeks:
+                current_report_date = datetime.datetime.strptime(available_weeks[-1], '%Y-%m-%d').date()
+
+            if current_report_date:
+                # Get fiscal month and year using the new utility function
+                fiscal_month_name_for_goal = get_fiscal_month_year(current_report_date)
+
+                # Get yearly goal (ANSR FYTD Goal)
+                yearly_goal_row = metas_sl_df[(metas_sl_df['SL'] == 'Total general') & (metas_sl_df['Mes'] == 'Total')]
+                if not yearly_goal_row.empty:
+                    ansr_fytd_goal = yearly_goal_row['ANSR Goal'].iloc[0]
+                    hours_fytd_goal = yearly_goal_row['Horas Goal'].iloc[0]
+
+                # Get monthly goal (ANSR MTD Goal) based on fiscal month
+                monthly_goal_row = metas_sl_df[(metas_sl_df['SL'] == 'Total general') & (metas_sl_df['Mes'] == fiscal_month_name_for_goal)]
+                if not monthly_goal_row.empty:
+                    ansr_mtd_goal = monthly_goal_row['ANSR Goal'].iloc[0]
+                    hours_mtd_goal = monthly_goal_row['Horas Goal'].iloc[0]
+
+            # Calculate completion percentages
+            # ANSR FYTD (formerly ansr_sintetico)
+            if ansr_fytd_goal > 0:
+                ansr_fytd_completion_percentage = (macro_total_ansr_sintetico / ansr_fytd_goal) * 100
+
+            # ANSR MTD (formerly monthly_tracker)
+            if ansr_mtd_goal > 0:
+                ansr_mtd_completion_percentage = (macro_monthly_tracker / ansr_mtd_goal) * 100
+
+            # Hours FYTD
+            hours_fytd_completion_percentage = 0
+            if 'hours_fytd_goal' in locals() and hours_fytd_goal > 0:
+                total_fytd_charged_hours_float = float(str(total_fytd_charged_hours).replace(',', ''))
+                hours_fytd_completion_percentage = (total_fytd_charged_hours_float / hours_fytd_goal) * 100
+
+            # Hours MTD
+            hours_mtd_completion_percentage = 0
+            if 'hours_mtd_goal' in locals() and hours_mtd_goal > 0:
+                total_mtd_charged_hours_float = float(str(total_mtd_charged_hours).replace(',', ''))
+                hours_mtd_completion_percentage = (total_mtd_charged_hours_float / hours_mtd_goal) * 100
+            else:
+                hours_mtd_completion_percentage = 0
+
+    except Exception as e:
+        print(f"Error processing goals: {e}")
+        traceback.print_exc() # Print full traceback for debugging
+
+    context['ansr_fytd_value'] = macro_total_ansr_sintetico
+    context['ansr_fytd_goal'] = ansr_fytd_goal
+    context['ansr_fytd_completion_percentage'] = ansr_fytd_completion_percentage
+    context['ansr_mtd_value'] = macro_monthly_tracker
+    context['ansr_mtd_goal'] = ansr_mtd_goal
+    context['ansr_mtd_completion_percentage'] = ansr_mtd_completion_percentage
+
+    # Add hours goals to context
+    context['hours_fytd_goal'] = hours_fytd_goal
+    context['hours_mtd_goal'] = hours_mtd_goal
+    context['hours_fytd_completion_percentage'] = hours_fytd_completion_percentage
+    context['hours_mtd_completion_percentage'] = hours_mtd_completion_percentage
+    
+    print(f"DEBUG: Final context keys: {context.keys()}")
+    if 'partner_spec_data' in context and context['partner_spec_data']:
+        print(f"DEBUG: partner_spec_data is present in context.")
+        for key, value in context['partner_spec_data'].items():
+            print(f"DEBUG:   partner_spec_data['{key}']: {value}")
+    else:
+        print(f"DEBUG: partner_spec_data is NOT present or is empty in context.")
+
     return render(request, 'core_dashboard/dashboard.html', context)
+
+
+def data_downloads_view(request):
+    DATA_DIR = os.path.join(settings.MEDIA_ROOT, 'historico_de_final_database')
+    
+    final_databases = []
+    report_dates = []
+    if os.path.exists(DATA_DIR):
+        weekly_dirs = [d for d in os.listdir(DATA_DIR) if os.path.isdir(os.path.join(DATA_DIR, d))]
+        report_dates = sorted(weekly_dirs, reverse=True)
+        for d in weekly_dirs:
+            dir_path = os.path.join(DATA_DIR, d)
+            files = [f for f in os.listdir(dir_path) if os.path.isfile(os.path.join(dir_path, f)) and 'Final_Database' in f and f.endswith('.csv')]
+            for f in files:
+                final_databases.append({'date': d, 'filename': f, 'path': f'{d}/{f}'})
+
+    # Handle file download
+    download_path = request.GET.get('download')
+    download_format = request.GET.get('format', 'csv')
+    if download_path:
+        file_path = os.path.join(DATA_DIR, download_path)
+        if os.path.exists(file_path):
+            df = pd.read_csv(file_path)
+            if download_format == 'excel':
+                from io import BytesIO
+                output = BytesIO()
+                with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                    df.to_excel(writer, index=False)
+                output.seek(0)
+                response = HttpResponse(output.read(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                response['Content-Disposition'] = f'attachment; filename={os.path.splitext(os.path.basename(file_path))[0]}.xlsx'
+                return response
+            else: # CSV
+                from django.http import HttpResponse
+                response = HttpResponse(df.to_csv(index=False), content_type='text/csv')
+                response['Content-Disposition'] = f'attachment; filename={os.path.basename(file_path)}'
+                return response
+
+    # Handle file preview
+    selected_date = request.GET.get('report_date')
+    df_html = None
+    preview_path = None
+    if selected_date:
+        # Find the final database for the selected date
+        for db in final_databases:
+            if db['date'] == selected_date:
+                preview_path = db['path']
+                file_path = os.path.join(DATA_DIR, preview_path)
+                if os.path.exists(file_path):
+                    df = pd.read_csv(file_path)
+                    df_html = df.to_html(classes='table table-dark table-striped table-hover', index=False)
+                break
+
+    context = {
+        'final_databases': sorted(final_databases, key=lambda x: x['date'], reverse=True),
+        'report_dates': report_dates,
+        'df_html': df_html,
+        'selected_date': selected_date,
+        'preview_path': preview_path,
+    }
+    return render(request, 'core_dashboard/data_downloads.html', context)
+
+
+def help_view(request):
+    return render(request, 'core_dashboard/help.html')
+
+
+def settings_view(request):
+    return render(request, 'core_dashboard/settings.html')
+''

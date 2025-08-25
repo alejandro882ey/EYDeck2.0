@@ -1,6 +1,52 @@
 {% extends "core_dashboard/base.html" %}
 
 {% block content %}
+{% load progress_bar %}
+<style>
+    .flip-card {
+        background-color: transparent;
+        width: 100%;
+        height: 300px; /* Adjusted height for top 5 list */
+        perspective: 1000px;
+    }
+
+    .flip-card-inner {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        text-align: center;
+        transition: transform 0.6s;
+        transform-style: preserve-3d;
+    }
+
+    .flip-card.flipped .flip-card-inner {
+        transform: rotateY(180deg);
+    }
+
+    .flip-card-front, .flip-card-back {
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        -webkit-backface-visibility: hidden;
+        backface-visibility: hidden;
+        display: flex;
+        flex-direction: column;
+        background-color: var(--ey-dark-grey);
+        color: white;
+        border-radius: .25rem; /* Match card style */
+    }
+
+    .flip-card-back {
+        transform: rotateY(180deg);
+        padding: 15px;
+        overflow-y: auto;
+    }
+
+    #filterBody {
+        min-height: 150px; /* Ensure filter body has a minimum height */
+    }
+</style>
+
 <h3 class="section-title">Data Filtering</h3>
 <!-- Filter Section -->
 <div class="row mb-4">
@@ -31,18 +77,18 @@
                             </select>
                         </div>
                         <div class="col-md-2">
-                            <label for="areaSelect" class="form-label">Area</label>
-                            <select class="form-select" id="areaSelect" name="area">
-                                <option value="">All Areas</option>
+                            <label for="areaSelect" class="form-label">Service Line</label>
+                            <select class="form-select" id="areaSelect" name="service_line">
+                                <option value="">All SL</option>
                                 {% for area in areas %}
                                     <option value="{{ area }}" {% if selected_area == area %}selected{% endif %}>{{ area }}</option>
                                 {% endfor %}
                             </select>
                         </div>
                         <div class="col-md-2">
-                            <label for="subAreaSelect" class="form-label">Sub-Area</label>
-                            <select class="form-select" id="subAreaSelect" name="sub_area">
-                                <option value="">All Sub-Areas</option>
+                            <label for="subAreaSelect" class="form-label">Sub Service Line</label>
+                            <select class="form-select" id="subAreaSelect" name="sub_service_line">
+                                <option value="">All SSL</option>
                                 {% for sub_area in sub_areas %}
                                     <option value="{{ sub_area }}" {% if selected_sub_area == sub_area %}selected{% endif %}>{{ sub_area }}</option>
                                 {% endfor %}
@@ -67,7 +113,7 @@
                             </select>
                         </div>
                         <div class="col-12 mt-3">
-                            <button type="submit" class="btn btn-primary">Apply Filters</button>
+                            <button type="submit" class="btn btn-primary">Filter</button>
                             <a href="{% url 'dashboard' %}" class="btn btn-secondary">Clear Filters</a>
                         </div>
                     </div>
@@ -78,11 +124,11 @@
 </div>
 
 {% if partner_spec_data %}
-<h3 class="section-title">Especificacion del Partner: {{ selected_partner }}</h3>
+<h3 class="section-title">Partner Specification: {{ selected_partner }}</h3>
 <div class="row mb-4">
     <div class="col-md-3">
         <div class="card text-center">
-            <div class="card-header">Numero de Engagements</div>
+            <div class="card-header">Number of Engagements</div>
             <div class="card-body">
                 <h3 class="card-title kpi-card-value">{{ partner_spec_data.num_engagements }}</h3>
             </div>
@@ -90,7 +136,7 @@
     </div>
     <div class="col-md-3">
         <div class="card text-center">
-            <div class="card-header">Numero de Clientes</div>
+            <div class="card-header">Number of Clients</div>
             <div class="card-body">
                 <h3 class="card-title kpi-card-value">{{ partner_spec_data.num_clients }}</h3>
             </div>
@@ -104,23 +150,187 @@
             </div>
         </div>
     </div>
-    {% if partner_spec_data.mtd_ansr_sintetico %}
+    {% if partner_spec_data.mtd_ansr_amt %}
     <div class="col-md-3">
         <div class="card text-center">
-            <div class="card-header">MTD ANSR Sintetico (Cliente: {{ selected_client }})</div>
+            <div class="card-header">MTD ANSR (Client: {{ selected_client }})</div>
             <div class="card-body">
-                <h3 class="card-title kpi-card-value">{{ partner_spec_data.mtd_ansr_sintetico }}</h3>
+                <h3 class="card-title kpi-card-value">{{ partner_spec_data.mtd_ansr_amt }}</h3>
             </div>
         </div>
     </div>
     {% endif %}
-    <div class="col-md-12">
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-header">FYTD ANSR</div>
+            <div class="card-body">
+                <h3 class="card-title kpi-card-value">${{ partner_spec_data.partner_fytd_ansr_value|floatformat:0 }}</h3>
+                <div class="progress mt-2">
+                    {% with completion=partner_spec_data.partner_fytd_ansr_completion_percentage %}
+                    <div class="progress-bar {% if completion >= 95 %}bg-success{% elif completion >= 50 %}bg-warning{% else %}bg-danger{% endif %} {% if completion == 0 %}text-dark{% else %}text-white{% endif %}" role="progressbar" style="width: {{ completion }}%;" aria-valuenow="{{ completion }}" aria-valuemin="0" aria-valuemax="100">{{ completion|floatformat:0 }}%</div>
+                    {% endwith %}
+                </div>
+                <small class="text-white">(${% if partner_spec_data.partner_fytd_ansr_goal %}{{ partner_spec_data.partner_fytd_ansr_goal|floatformat:0 }}{% else %}0{% endif %})</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-header">MTD ANSR</div>
+            <div class="card-body">
+                <h3 class="card-title kpi-card-value">${{ partner_spec_data.partner_mtd_ansr_value|floatformat:0 }}</h3>
+                <div class="progress mt-2">
+                    {% with completion=partner_spec_data.partner_mtd_ansr_completion_percentage %}
+                    <div class="progress-bar {% if completion >= 95 %}bg-success{% elif completion >= 50 %}bg-warning{% else %}bg-danger{% endif %} {% if completion == 0 %}text-dark{% else %}text-white{% endif %}" role="progressbar" style="width: {{ completion }}%;" aria-valuenow="{{ completion }}" aria-valuemin="0" aria-valuemax="100">{{ completion|floatformat:0 }}%</div>
+                    {% endwith %}
+                </div>
+                <small class="text-white">(${% if partner_spec_data.partner_mtd_ansr_goal %}{{ partner_spec_data.partner_mtd_ansr_goal|floatformat:0 }}{% else %}0{% endif %})</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-header">Horas Cargadas (FYTD)</div>
+            <div class="card-body">
+                <h3 class="card-title kpi-card-value">{{ partner_spec_data.partner_fytd_charged_hours|floatformat:1 }}</h3>
+                <div class="progress mt-2">
+                    {% with completion=partner_spec_data.partner_fytd_hours_completion_percentage %}
+                    <div class="progress-bar {% if completion >= 95 %}bg-success{% elif completion >= 50 %}bg-warning{% else %}bg-danger{% endif %} {% if completion == 0 %}text-dark{% else %}text-white{% endif %}" role="progressbar" style="width: {{ completion }}%;" aria-valuenow="{{ completion }}" aria-valuemin="0" aria-valuemax="100">{{ completion|floatformat:0 }}%</div>
+                    {% endwith %}
+                </div>
+                <small class="text-white">({% if partner_spec_data.partner_fytd_hours_goal %}{{ partner_spec_data.partner_fytd_hours_goal|floatformat:0 }}{% else %}0{% endif %})</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-header">Horas Cargadas (MTD)</div>
+            <div class="card-body">
+                <h3 class="card-title kpi-card-value">{{ partner_spec_data.partner_mtd_charged_hours|floatformat:1 }}</h3>
+                <div class="progress mt-2">
+                    {% with completion=partner_spec_data.partner_mtd_hours_completion_percentage %}
+                    <div class="progress-bar {% if completion >= 95 %}bg-success{% elif completion >= 50 %}bg-warning{% else %}bg-danger{% endif %} {% if completion == 0 %}text-dark{% else %}text-white{% endif %}" role="progressbar" style="width: {{ completion }}%;" aria-valuenow="{{ completion }}" aria-valuemin="0" aria-valuemax="100">{{ completion|floatformat:0 }}%</div>
+                    {% endwith %}
+                </div>
+                <small class="text-white">({% if partner_spec_data.partner_mtd_hours_goal %}{{ partner_spec_data.partner_mtd_hours_goal|floatformat:0 }}{% else %}0{% endif %})</small>
+            </div>
+        </div>
+    </div>
+    <!-- Display FYTD_ChargedHours and MTD_Charged in the filter per partner -->
+    <div class="col-md-6">
         <div class="card">
-            <div class="card-header">Lista de Clientes</div>
-            <div class="card-body" style="max-height: 200px; overflow-y: auto;">
+            <div class="card-header">Charged Hours by Partner</div>
+            <div class="card-body" style="max-height: 300px; overflow-y: auto;">
+                <div class="table-responsive">
+                    <table class="table table-dark table-striped table-hover">
+                        <thead>
+                            <tr>
+                                <th scope="col">Partner</th>
+                                <th scope="col">Horas Cargadas (FYTD)</th>
+                                <th scope="col">Horas Cargadas (MTD)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for fytd_entry in fytd_charged_hours_by_partner_with_labels %}
+                            <tr>
+                                <td>{{ fytd_entry.engagement_partner }}</td>
+                                <td>{{ fytd_entry.total_fytd_charged_hours|floatformat:1 }}</td>
+                                <td>
+                                    {% for mtd_entry in mtd_charged_hours_by_partner_with_labels %}
+                                        {% if mtd_entry.engagement_partner == fytd_entry.engagement_partner %}
+                                            {{ mtd_entry.total_mtd_charged_hours|floatformat:1 }}
+                                        {% endif %}
+                                    {% endfor %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">Client List & Revenue</div>
+            <div class="card-body" style="max-height: 300px; overflow-y: auto;">
                 <ul class="list-group list-group-flush">
-                    {% for client_name in partner_spec_data.client_list %}
-                    <li class="list-group-item bg-transparent text-white">{{ client_name }}</li>
+                    {% for client in partner_spec_data.client_list %}
+                    <li class="list-group-item bg-transparent text-white d-flex justify-content-between align-items-center">
+                        {{ client.name }}
+                        <span class="badge bg-primary rounded-pill">{{ client.revenue }}</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">Charged Hours by Manager</div>
+            <div class="card-body" style="max-height: 300px; overflow-y: auto;">
+                <div class="table-responsive">
+                    <table class="table table-dark table-striped table-hover">
+                        <thead>
+                            <tr>
+                                <th scope="col">Manager</th>
+                                <th scope="col">FYTD Charged Hours</th>
+                                <th scope="col">MTD Charged Hours</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for manager_fytd in fytd_charged_hours_by_manager %}
+                            <tr>
+                                <td>{{ manager_fytd.engagement_manager }}</td>
+                                <td>{{ manager_fytd.total_fytd_charged_hours|floatformat:1 }}</td>
+                                <td>
+                                    {% for manager_mtd in mtd_charged_hours_by_manager %}
+                                        {% if manager_mtd.engagement_manager == manager_fytd.engagement_manager %}
+                                            {{ manager_mtd.total_mtd_charged_hours|floatformat:1 }}
+                                        {% endif %}
+                                    {% endfor %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-center">
+            <div class="card-header">Total Perdida Diferencial</div>
+            <div class="card-body">
+                <h3 class="card-title kpi-card-value">${{ partner_spec_data.total_perdida_diferencial }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">Perdida Diferencial by Client</div>
+            <div class="card-body" style="max-height: 300px; overflow-y: auto;">
+                <ul class="list-group list-group-flush">
+                    {% for item in partner_spec_data.perdida_per_client %}
+                    <li class="list-group-item bg-transparent text-white d-flex justify-content-between align-items-center">
+                        {{ item.client_name }}
+                        <span class="badge bg-danger rounded-pill">{{ item.perdida }}</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">Top 5 Engagements by Perdida Diferencial</div>
+            <div class="card-body" style="max-height: 300px; overflow-y: auto;">
+                <ul class="list-group list-group-flush">
+                    {% for item in partner_spec_data.top_engagements_perdida %}
+                    <li class="list-group-item bg-transparent text-white d-flex justify-content-between align-items-center">
+                        {{ item.engagement_name }}
+                        <span class="badge bg-danger rounded-pill">{{ item.perdida }}</span>
+                    </li>
                     {% endfor %}
                 </ul>
             </div>
@@ -129,41 +339,48 @@
 </div>
 {% endif %}
 
+{% if not selected_partner %}
 <h3 class="section-title">Macro</h3>
 <div class="row mb-4">
-    <div class="col-md-4">
+    <div class="col-md-3">
         <div class="card text-center">
-            <div class="card-header">Total Clientes</div>
+            <div class="card-header">Total Clients</div>
             <div class="card-body">
                 <h3 class="card-title kpi-card-value">{{ macro_total_clients }}</h3>
             </div>
         </div>
     </div>
-    <div class="col-md-4">
-        <div class="card text-center">
-            <div class="card-header">ANSR Sintético</div>
+    <div class="col-md-3">
+        <div class="card text-center" onclick="window.location.href='{% url 'data_downloads' %}?report_date={{ selected_week }}'">
+            <div class="card-header">ANSR FYTD</div>
             <div class="card-body">
-                <h3 class="card-title kpi-card-value">{{ macro_total_ansr_sintetico }}</h3>
+                <h3 class="card-title kpi-card-value">${{ ansr_fytd_value|floatformat:0 }}</h3>
+                <div class="progress mt-2">
+                    {% with completion=ansr_fytd_completion_percentage %}
+                    <div class="progress-bar {% if completion >= 95 %}bg-success{% elif completion >= 50 %}bg-warning{% else %}bg-danger{% endif %} {% if completion == 0 %}text-dark{% else %}text-white{% endif %}" role="progressbar" style="width: {{ completion }}%;" aria-valuenow="{{ completion }}" aria-valuemin="0" aria-valuemax="100">{{ completion|floatformat:0 }}%</div>
+                    {% endwith %}
+                </div>
+                <small class="text-white">(${{ ansr_fytd_goal|floatformat:0 }})</small>
             </div>
         </div>
     </div>
-    <div class="col-md-4">
+    <div class="col-md-3">
         <div class="card text-center">
-            <div class="card-header">Margen</div>
+            <div class="card-header">Margin</div>
             <div class="card-body">
                 <h3 class="card-title kpi-card-value">{{ macro_margin }}</h3>
             </div>
         </div>
     </div>
-    <div class="col-md-4">
+    <div class="col-md-3">
         <div class="card text-center">
-            <div class="card-header">Porcentaje Margen</div>
+            <div class="card-header">Margin Percentage</div>
             <div class="card-body">
                 <h3 class="card-title kpi-card-value">{{ macro_margin_percentage }}</h3>
             </div>
         </div>
     </div>
-    <div class="col-md-4">
+    <div class="col-md-3">
         <div class="card text-center">
             <div class="card-header">RPH</div>
             <div class="card-body">
@@ -171,11 +388,53 @@
             </div>
         </div>
     </div>
-    <div class="col-md-4">
-        <div class="card text-center">
-            <div class="card-header">Monthly Tracker</div>
+    <div class="col-md-3">
+        <div class="card text-center" onclick="window.location.href='{% url 'data_downloads' %}?report_date={{ selected_week }}'">
+            <div class="card-header">ANSR MTD</div>
             <div class="card-body">
-                <h3 class="card-title kpi-card-value">{{ macro_monthly_tracker }}</h3>
+                <h3 class="card-title kpi-card-value">${{ ansr_mtd_value|floatformat:0 }}</h3>
+                <div class="progress mt-2">
+                    {% with completion=ansr_mtd_completion_percentage %}
+                    <div class="progress-bar {{ completion|progress_bar_class }}" role="progressbar" style="width: {{ completion }}%;" aria-valuenow="{{ completion }}" aria-valuemin="0" aria-valuemax="100">{{ completion|floatformat:0 }}%</div>
+                    {% endwith %}
+                </div>
+                <small class="text-white">(${{ ansr_mtd_goal|floatformat:0 }})</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-header">Horas Cargadas (FYTD)</div>
+            <div class="card-body">
+                <h3 class="card-title kpi-card-value">{{ total_fytd_charged_hours }}</h3>
+                <div class="progress mt-2">
+                    {% with completion=hours_fytd_completion_percentage %}
+                    <div class="progress-bar {% if completion >= 95 %}bg-success{% elif completion >= 50 %}bg-warning{% else %}bg-danger{% endif %} {% if completion == 0 %}text-dark{% else %}text-white{% endif %}" role="progressbar" style="width: {{ completion }}%;" aria-valuenow="{{ completion }}" aria-valuemin="0" aria-valuemax="100">{{ completion|floatformat:0 }}%</div>
+                    {% endwith %}
+                </div>
+                <small class="text-white">({{ hours_fytd_goal|floatformat:0 }})</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-header">Horas Cargadas (MTD)</div>
+            <div class="card-body">
+                <h3 class="card-title kpi-card-value">{{ total_mtd_charged_hours }}</h3>
+                <div class="progress mt-2">
+                    {% with completion=hours_mtd_completion_percentage %}
+                    <div class="progress-bar {% if completion >= 95 %}bg-success{% elif completion >= 50 %}bg-warning{% else %}bg-danger{% endif %} {% if completion == 0 %}text-dark{% else %}text-white{% endif %}" role="progressbar" style="width: {{ completion }}%;" aria-valuenow="{{ completion }}" aria-valuemin="0" aria-valuemax="100">{{ completion|floatformat:0 }}%</div>
+                    {% endwith %}
+                </div>
+                <small class="text-white">({{ hours_mtd_goal|floatformat:0 }})</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center" onclick="window.location.href='{% url 'data_downloads' %}?report_date={{ selected_week }}'">
+            <div class="card-header">Perdida Diferencial</div>
+            <div class="card-body">
+                <h3 class="card-title kpi-card-value">${{ macro_diferencial_final|floatformat:0 }}</h3>
             </div>
         </div>
     </div>
@@ -183,58 +442,66 @@
 
 <h3 class="section-title">Key Performance Indicators</h3>
 <div class="row">
-    <!-- Top Partners and Top Clients Section (Moved to top right) -->
-    <div class="col-lg-12">
-        <div class="row">
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-header">Top Partners by Revenue</div>
-                    <div class="card-body">
-                        <div class="table-responsive">
-                            <table class="table table-dark table-striped table-hover">
-                                <thead>
-                                    <tr>
-                                        <th scope="col">Partner</th>
-                                        <th scope="col">Revenue</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% for partner in top_partners %}
-                                    <tr>
-                                        <td>{{ partner.engagement_partner }}</td>
-                                        <td>{{ partner.total_revenue }}</td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                        </div>
+    <div class="col-md-6">
+        <div class="flip-card" onclick="window.location.href='{% url 'data_downloads' %}?report_date={{ selected_week }}'">
+            <div class="flip-card-inner">
+                <div class="flip-card-front">
+                    <div class="card-header w-100">Top 5 Partners by Revenue</div>
+                    <div class="card-body w-100" style="overflow-y: auto;">
+                        <ul class="list-group list-group-flush">
+                            {% for partner in top_partners %}
+                            <li class="list-group-item bg-transparent text-white d-flex justify-content-between align-items-center">
+                                {{ partner.engagement_partner }}
+                                <span class="badge bg-primary rounded-pill">{{ partner.total_revenue }}</span>
+                            </li>
+                            {% endfor %}
+                        </ul>
                     </div>
+                </div>
+                <div class="flip-card-back">
+                    <h5 class="card-title">All Partners by Revenue & Charged Hours (FYTD)</h5>
+                    <div class="table-responsive">
+                        <table class="table table-dark table-striped table-hover">
+                            <thead>
+                                <tr>
+                                    <th scope="col">Partner</th>
+                                    <th scope="col">Revenue</th>
+                                    <th scope="col">Charged Hours</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for partner in all_partners_ranked %}
+                                <tr>
+                                    <td>{{ partner.engagement_partner }}</td>
+                                    <td>{{ partner.total_revenue }}</td>
+                                    <td>
+                                        {% for hours_entry in all_fytd_charged_hours_by_partner %}
+                                            {% if hours_entry.engagement_partner == partner.engagement_partner %}
+                                                {{ hours_entry.total_fytd_charged_hours|floatformat:1 }}
+                                            {% endif %}
+                                        {% endfor %}
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
                 </div>
             </div>
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-header">Top Clients by Revenue</div>
-                    <div class="card-body">
-                        <div class="table-responsive">
-                            <table class="table table-dark table-striped table-hover">
-                                <thead>
-                                    <tr>
-                                        <th scope="col">Client</th>
-                                        <th scope="col">Revenue</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% for client in top_clients_table %}
-                                    <tr>
-                                        <td>{{ client.client__name }}</td>
-                                        <td>{{ client.total_revenue }}</td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
+        </div>
+    </div>
+    
+</div>
+
+    
+</div>
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header filter-header" data-bs-toggle="collapse" data-bs-target="#exchangeRateGraphBody" aria-expanded="true" aria-controls="exchangeRateGraphBody">
+                Exchange Rate Differential Trends <span class="toggle-icon material-icons-round">expand_more</span>
+            </div>
+            <div id="exchangeRateGraphBody" class="collapse show card-body">
+                <div id="exchangeRateChart"></div>
             </div>
         </div>
     </div>
@@ -308,9 +575,9 @@
                     <div class="col-md-4">
                         <h4>Valores de Pérdida:</h4>
                         <ul class="list-group list-group-flush">
-                            <li class="list-group-item bg-transparent text-ey-yellow">Total Pérdida: {{ loss_per_differential }}</li>
-                            <li class="list-group-item bg-transparent text-ey-yellow">Pérdida BCV: <span id="loss-bcv">N/A</span></li>
-                            <li class="list-group-item bg-transparent text-ey-yellow">Pérdida Monitor: <span id="loss-monitor">N/A</span></li>
+                            <li class="list-group-item bg-transparent text-white">Total Pérdida: {{ loss_per_differential }}</li>
+                            <li class="list-group-item bg-transparent text-white">Pérdida BCV: <span id="loss-bcv">N/A</span></li>
+                            <li class="list-group-item bg-transparent text-white">Pérdida Monitor: <span id="loss-monitor">N/A</span></li>
                         </ul>
                     </div>
                 </div>
@@ -318,48 +585,79 @@
         </div>
     </div>
 </div>
+{% endif %}
 
-<h3 class="section-title">Recent Data Entries</h3>
-<!-- Detailed Tables Section -->
-<div class="row mb-4">
-    <div class="col-lg-12">
-        <div class="card">
-            <div class="card-header">Recent Revenue Entries</div>
-            <div class="card-body">
-                <div class="table-responsive">
-                    <table class="table table-dark table-striped table-hover">
-                        <thead>
-                            <tr>
-                                <th scope="col">Date</th>
-                                <th scope="col">Client</th>
-                                <th scope="col">Area</th>
-                                <th scope="col">Revenue</th>
-                                <th scope="col">Partner</th>
-                                <th scope="col">Manager</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for entry in recent_entries %}
-                            <tr>
-                                <td>{{ entry.date }}</td>
-                                <td>{{ entry.client.name }}</td>
-                                <td>{{ entry.area.name }}</td>
-                                <td>{{ entry.revenue_formatted }}</td>
-                                <td>{{ entry.engagement_partner }}</td>
-                                <td>{{ entry.engagement_manager }}</td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const filterForm = document.querySelector('form');
+        const selects = filterForm.querySelectorAll('select');
+
+        selects.forEach(select => {
+            select.addEventListener('change', function() {
+                filterForm.submit();
+            });
+        });
+    });
+
+    // Exchange Rate Chart (Plotly)
+    if (document.getElementById('exchangeRateChart')) {
+        const exchangeDates = {{ exchange_dates|safe }};
+        const oficialRatesHistory = {{ oficial_rates_history|safe }};
+        const paraleloRatesHistory = {{ paralelo_rates_history|safe }};
+        const differentialHistory = {{ differential_history|safe }};
+
+        const traceOficial = {
+            x: exchangeDates,
+            y: oficialRatesHistory,
+            mode: 'lines',
+            name: 'Oficial Rate',
+            line: {color: 'var(--ey-white)'} // Use EY white
+        };
+
+        const traceParalelo = {
+            x: exchangeDates,
+            y: paraleloRatesHistory,
+            mode: 'lines',
+            name: 'Paralelo Rate',
+            line: {color: 'var(--ey-white)'} // Use EY white
+        };
+
+        const traceDifferential = {
+            x: exchangeDates,
+            y: differentialHistory,
+            mode: 'lines',
+            name: 'Differential',
+            line: {color: 'var(--ey-green)', dash: 'dot'} // Use EY green, dotted line
+        };
+
+        const layout = {
+            title: 'Historical Exchange Rates and Differential',
+            plot_bgcolor: 'var(--ey-dark-grey)', // Card background
+            paper_bgcolor: 'var(--ey-dark-grey)', // Card background
+            font: {
+                color: 'var(--ey-white)' // Text color
+            },
+            xaxis: {
+                title: 'Date',
+                tickfont: { color: 'var(--ey-white)' },
+                gridcolor: 'var(--ey-medium-grey)'
+            },
+            yaxis: {
+                title: 'Rate (VES)',
+                tickfont: { color: 'var(--ey-white)' },
+                gridcolor: 'var(--ey-medium-grey)'
+            },
+            legend: {
+                font: { color: 'var(--ey-white)' }
+            }
+        };
+
+        Plotly.newPlot('exchangeRateChart', [traceOficial, traceParalelo, traceDifferential], layout);
+    }
+
     // Data from Django context
     const areaLabels = {{ area_labels|safe }};
     const areaData = {{ area_data|safe }};
@@ -369,10 +667,10 @@
     const trendData = {{ trend_data|safe }};
 
     // Nuevos datos para gráficos
-    const partnerDistributionLabels = {{ partner_distribution_labels|safe }};
-    const partnerDistributionData = {{ partner_distribution_data|safe }};
-    const unbilledLabels = {{ unbilled_labels|safe }};
-    const unbilledData = {{ unbilled_data|safe }};
+    const partnerDistributionLabels = JSON.parse('{{ partner_distribution_labels|safe }}');
+    const partnerDistributionData = JSON.parse('{{ partner_distribution_data|safe }}');
+    const unbilledLabels = JSON.parse('{{ unbilled_labels|safe }}');
+    const unbilledData = JSON.parse('{{ unbilled_data|safe }}');
 
     // Chart.js Global Defaults for EY Theme
     Chart.defaults.color = 'var(--ey-dark-grey)'; // Text color
@@ -380,229 +678,230 @@
     Chart.defaults.font.family = 'Arial, sans-serif';
 
     // Define a color palette for charts
-    const chartColors = [
-        'var(--ey-yellow)',
-        'var(--ey-blue)',
-        'var(--ey-green)',
-        'var(--ey-red)',
-        'var(--ey-purple)',
-        '#FF6384', // Pink
-        '#36A2EB', // Light Blue
-        '#FFCE56', // Orange
-        '#4BC0C0', // Teal
-        '#9966FF'  // Lavender
-    ];
+    
 
-    // Area Chart
-    new Chart(document.getElementById('areaChart'), {
-        type: 'bar',
-        data: {
-            labels: areaLabels,
-            datasets: [{
-                label: 'Revenue',
-                data: areaData,
-                backgroundColor: chartColors[0],
-                borderColor: chartColors[0],
-                borderWidth: 1
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    ticks: { color: 'var(--ey-dark-grey)' }
-                },
-                x: {
-                    ticks: { color: 'var(--ey-dark-grey)' }
-                }
+    if (document.getElementById('areaChart')) {
+        // Area Chart
+        new Chart(document.getElementById('areaChart'), {
+            type: 'bar',
+            data: {
+                labels: areaLabels,
+                datasets: [{
+                    label: 'Revenue',
+                    data: areaData,
+                    backgroundColor: 'var(--ey-yellow)',
+                    borderColor: 'var(--ey-yellow)',
+                    borderWidth: 1
+                }]
             },
-            plugins: {
-                legend: {
-                    labels: {
-                        color: 'var(--ey-dark-grey)'
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: { color: 'var(--ey-dark-grey)' }
+                    },
+                    x: {
+                        ticks: { color: 'var(--ey-dark-grey)' }
                     }
-                }
-            }
-        }
-    });
-
-    // Client Chart
-    new Chart(document.getElementById('clientChart'), {
-        type: 'bar',
-        data: {
-            labels: clientLabels,
-            datasets: [{
-                label: 'Revenue',
-                data: clientData,
-                backgroundColor: chartColors[1],
-                borderColor: chartColors[1],
-                borderWidth: 1
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    ticks: { color: 'var(--ey-dark-grey)' }
                 },
-                x: {
-                    ticks: { color: 'var(--ey-dark-grey)' }
-                }
-            },
-            plugins: {
-                legend: {
-                    labels: {
-                        color: 'var(--ey-dark-grey)'
+                plugins: {
+                    legend: {
+                        labels: {
+                            color: 'var(--ey-dark-grey)'
+                        }
                     }
                 }
             }
-        }
-    });
+        });
+    }
 
-    // Trend Chart
-    new Chart(document.getElementById('trendChart'), {
-        type: 'line',
-        data: {
-            labels: trendLabels,
-            datasets: [{
-                label: 'Revenue',
-                data: trendData,
-                borderColor: chartColors[2],
-                backgroundColor: 'rgba(102, 153, 0, 0.2)',
-                borderWidth: 2,
-                fill: true
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    ticks: { color: 'var(--ey-dark-grey)' }
+    if (document.getElementById('clientChart')) {
+        // Client Chart
+        new Chart(document.getElementById('clientChart'), {
+            type: 'bar',
+            data: {
+                labels: clientLabels,
+                datasets: [{
+                    label: 'Revenue',
+                    data: clientData,
+                    backgroundColor: 'var(--ey-blue)',
+                    borderColor: 'var(--ey-blue)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: { color: 'var(--ey-dark-grey)' }
+                    },
+                    x: {
+                        ticks: { color: 'var(--ey-dark-grey)' }
+                    }
                 },
-                x: {
-                    ticks: { color: 'var(--ey-dark-grey)' }
+                plugins: {
+                    legend: {
+                        labels: {
+                            color: 'var(--ey-dark-grey)'
+                        }
+                    }
                 }
+            }
+        });
+    }
+
+    if (document.getElementById('trendChart')) {
+        // Trend Chart
+        new Chart(document.getElementById('trendChart'), {
+            type: 'line',
+            data: {
+                labels: trendLabels,
+                datasets: [{
+                    label: 'Revenue',
+                    data: trendData,
+                    borderColor: 'var(--ey-green)',
+                    backgroundColor: 'rgba(102, 153, 0, 0.2)',
+                    borderWidth: 2,
+                    fill: true
+                }]
             },
-            plugins: {
-                legend: {
-                    labels: {
-                        color: 'var(--ey-dark-grey)'
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: { color: 'var(--ey-dark-grey)' }
+                    },
+                    x: {
+                        ticks: { color: 'var(--ey-dark-grey)' }
                     }
-                }
-            }
-        }
-    });
-
-    // Client Distribution by Partner (Pie Chart)
-    const pieChartColors = [
-        '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
-        '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'
-    ];
-    new Chart(document.getElementById('partnerDistributionChart'), {
-        type: 'pie',
-        data: {
-            labels: partnerDistributionLabels,
-            datasets: [{
-                label: 'Number of Clients',
-                data: partnerDistributionData,
-                backgroundColor: pieChartColors,
-                borderColor: 'var(--ey-white)',
-                borderWidth: 1
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    labels: {
-                        color: 'var(--ey-dark-grey)'
-                    }
-                }
-            }
-        }
-    });
-
-    // Unbilled Inventory by Service Line (Bar Chart)
-    new Chart(document.getElementById('unbilledInventoryChart'), {
-        type: 'bar',
-        data: {
-            labels: unbilledLabels,
-            datasets: [{
-                label: 'Unbilled Amount',
-                data: unbilledData,
-                backgroundColor: chartColors[3],
-                borderColor: chartColors[3],
-                borderWidth: 1
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    ticks: { color: 'var(--ey-dark-grey)' }
                 },
-                x: {
-                    ticks: { color: 'var(--ey-dark-grey)' }
-                }
-            },
-            plugins: {
-                legend: {
-                    labels: {
-                        color: 'var(--ey-dark-grey)'
+                plugins: {
+                    legend: {
+                        labels: {
+                            color: 'var(--ey-dark-grey)'
+                        }
                     }
                 }
             }
-        }
-    });
+        });
+    }
 
-    // Pérdida por Tipo de Cambio
-    const lossPerDifferentialChartLabels = ['Pérdida Oficial', 'Pérdida Paralelo']; // Etiquetas para las dos barras
-    const lossPerDifferentialChartData = [
-        {% if loss_oficial_data %}{{ loss_oficial_data|floatformat:2 }}{% else %}0{% endif %},
-        {% if loss_paralelo_data %}{{ loss_paralelo_data|floatformat:2 }}{% else %}0{% endif %}
-    ];
+    if (document.getElementById('partnerDistributionChart')) {
+        // Client Distribution by Partner (Pie Chart)
+        const pieChartColors = [
+            '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
+            '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'
+        ];
+        new Chart(document.getElementById('partnerDistributionChart'), {
+            type: 'pie',
+            data: {
+                labels: partnerDistributionLabels,
+                datasets: [{
+                    label: 'Number of Clients',
+                    data: partnerDistributionData,
+                    backgroundColor: pieChartColors,
+                    borderColor: 'var(--ey-white)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        labels: {
+                            color: 'var(--ey-dark-grey)'
+                        }
+                    }
+                }
+            }
+        });
+    }
 
-    new Chart(document.getElementById('lossPerDifferentialChart'), {
-        type: 'bar',
-        data: {
-            labels: lossPerDifferentialChartLabels,
-            datasets: [{
-                label: 'Monto de Pérdida',
-                data: lossPerDifferentialChartData,
-                backgroundColor: [chartColors[4], chartColors[0]], // Using purple and yellow
-                borderColor: [chartColors[4], chartColors[0]],
-                borderWidth: 1
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    ticks: { color: 'var(--ey-dark-grey)' }
+    if (document.getElementById('unbilledInventoryChart')) {
+        // Unbilled Inventory by Service Line (Bar Chart)
+        new Chart(document.getElementById('unbilledInventoryChart'), {
+            type: 'bar',
+            data: {
+                labels: unbilledLabels,
+                datasets: [{
+                    label: 'Unbilled Amount',
+                    data: unbilledData,
+                    backgroundColor: 'var(--ey-red)',
+                    borderColor: 'var(--ey-red)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: { color: 'var(--ey-dark-grey)' }
+                    },
+                    x: {
+                        ticks: { color: 'var(--ey-dark-grey)' }
+                    }
                 },
-                x: {
-                    ticks: { color: 'var(--ey-dark-grey)' }
-                }
-            },
-            plugins: {
-                legend: {
-                    labels: {
-                        color: 'var(--ey-dark-grey)'
+                plugins: {
+                    legend: {
+                        labels: {
+                            color: 'var(--ey-dark-grey)'
+                        }
                     }
                 }
             }
-        }
-    });
+        });
+    }
+
+    if (document.getElementById('lossPerDifferentialChart')) {
+        // Pérdida por Tipo de Cambio
+        const lossPerDifferentialChartLabels = ['Pérdida Oficial', 'Pérdida Paralelo']; // Etiquetas para las dos barras
+        const lossPerDifferentialChartData = [
+            {% if loss_oficial_data %}{{ loss_oficial_data|floatformat:1 }}{% else %}0{% endif %},
+            {% if loss_paralelo_data %}{{ loss_paralelo_data|floatformat:1 }}{% else %}0{% endif %}
+        ];
+
+        new Chart(document.getElementById('lossPerDifferentialChart'), {
+            type: 'bar',
+            data: {
+                labels: lossPerDifferentialChartLabels,
+                datasets: [{
+                    label: 'Monto de Pérdida',
+                    data: lossPerDifferentialChartData,
+                    backgroundColor: ['var(--ey-purple)', 'var(--ey-yellow)'], // Using purple and yellow
+                    borderColor: ['var(--ey-purple)', 'var(--ey-yellow)'],
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: { color: 'var(--ey-dark-grey)' }
+                    },
+                    x: {
+                        ticks: { color: 'var(--ey-dark-grey)' }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        labels: {
+                            color: 'var(--ey-dark-grey)'
+                        }
+                    }
+                }
+            }
+        });
+    }
 </script>
 {% endblock %}

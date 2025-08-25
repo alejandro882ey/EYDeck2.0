@@ -78,3 +78,17 @@ class RevenueEntry(models.Model):
 
     def __str__(self):
         return f"{self.date} - {self.client.name} - {self.revenue}"
+
+class ExchangeRate(models.Model):
+    date = models.DateField(unique=True)
+    oficial_rate = models.DecimalField(max_digits=10, decimal_places=4, null=True, blank=True)
+    paralelo_rate = models.DecimalField(max_digits=10, decimal_places=4, null=True, blank=True)
+    differential = models.DecimalField(max_digits=10, decimal_places=4, null=True, blank=True) # paralelo - oficial
+
+    def save(self, *args, **kwargs):
+        if self.paralelo_rate is not None and self.oficial_rate is not None:
+            self.differential = self.paralelo_rate - self.oficial_rate
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"Exchange Rates for {self.date}: Oficial={self.oficial_rate}, Paralelo={self.paralelo_rate}"

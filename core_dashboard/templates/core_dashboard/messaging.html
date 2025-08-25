@@ -6,22 +6,42 @@
     <div class="card mt-4">
         <div class="card-header">Send Message</div>
         <div class="card-body">
-            <form method="post">
+            <form method="post" class="row g-3">
                 {% csrf_token %}
-                <div class="mb-3">
-                    <label for="subAreaSelect" class="form-label">Select Sub-Area</label>
-                    <select class="form-select" id="subAreaSelect" name="sub_area">
-                        <option value="">Select a Sub-Area</option>
-                        {% for sub_area in sub_areas %}
-                            <option value="{{ sub_area }}">{{ sub_area }}</option>
+                <div class="col-md-4">
+                    <label for="partnerSelect" class="form-label">Partner</label>
+                    <select class="form-select" id="partnerSelect" name="partner">
+                        <option value="">All Partners</option>
+                        {% for partner in partners %}
+                            <option value="{{ partner }}">{{ partner }}</option>
                         {% endfor %}
                     </select>
                 </div>
-                <div class="mb-3">
+                <div class="col-md-4">
+                    <label for="managerSelect" class="form-label">Manager</label>
+                    <select class="form-select" id="managerSelect" name="manager">
+                        <option value="">All Managers</option>
+                        {% for manager in managers %}
+                            <option value="{{ manager }}">{{ manager }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label for="serviceLineSelect" class="form-label">Service Line</label>
+                    <select class="form-select" id="serviceLineSelect" name="service_line">
+                        <option value="">All Service Lines</option>
+                        {% for area in areas %}
+                            <option value="{{ area }}">{{ area }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-12">
                     <label for="messageContent" class="form-label">Message</label>
                     <textarea class="form-control" id="messageContent" name="message_content" rows="5"></textarea>
                 </div>
-                <button type="submit" class="btn btn-primary">Send Message</button>
+                <div class="col-12">
+                    <button type="submit" class="btn btn-primary">Send Message</button>
+                </div>
             </form>
         </div>
     </div>

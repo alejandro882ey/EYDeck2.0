@@ -1,0 +1,77 @@
+{% extends 'core_dashboard/base.html' %}
+
+{% block content %}
+<div class="container-fluid">
+    <h1 class="h3 mb-4 text-gray-800">Data Downloads & Preview</h1>
+
+    <!-- Preview Selector -->
+    <div class="card shadow mb-4">
+        <div class="card-header py-3">
+            <h6 class="m-0 font-weight-bold">Select Report Date for Preview</h6>
+        </div>
+        <div class="card-body">
+            <form method="get" action="{% url 'data_downloads' %}">
+                <div class="row">
+                    <div class="col-md-8">
+                        <select name="report_date" class="form-select">
+                            <option value="">Select a date...</option>
+                            {% for date in report_dates %}
+                                <option value="{{ date }}" {% if date == selected_date %}selected{% endif %}>{{ date }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                                                <button type="submit" class="btn btn-primary">Preview</button>
+                        <a href="{% url 'data_downloads' %}" class="btn btn-secondary">Clear</a>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    {% if selected_date and df_html %}
+        <!-- Preview Section -->
+        <div class="card shadow mb-4">
+            <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
+                <h6 class="m-0 font-weight-bold text-white">Preview for: {{ selected_date }}</h6>
+                <div>
+                    <a href="?download={{ preview_path }}&format=csv" class="btn btn-primary btn-sm">Download as CSV</a>
+                    <a href="?download={{ preview_path }}&format=excel" class="btn btn-secondary btn-sm">Download as Excel</a>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive" style="max-height: 250px; overflow-y: auto; font-size: 0.65rem;">
+                    <style>
+                        .table-responsive table th, .table-responsive table td {
+                            padding: 0.1rem;
+                            line-height: 1;
+                        }
+                        .table-responsive table th {
+                            font-size: 0.6rem; /* Smaller font for column names */
+                        }
+                    </style>
+                    {{ df_html|safe }}
+                </div>
+            </div>
+        </div>
+    {% else %}
+        <!-- Download List Section -->
+        <div class="card shadow mb-4">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold">Download Weekly Final Datasets</h6>
+            </div>
+            <div class="card-body">
+                <div class="list-group">
+                    {% for db in final_databases %}
+                        <a href="?download={{ db.path }}" class="list-group-item list-group-item-action">
+                            Download {{ db.filename }}
+                        </a>
+                    {% empty %}
+                        <p>No Final Database files found.</p>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

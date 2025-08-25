@@ -33,3 +33,35 @@ def generate_mock_data(num_days=500):
         df[col] = df[col].apply(lambda x: max(x, 1.0)) 
 
     return df
+
+def get_fiscal_month_year(report_date):
+    """
+    Determines the fiscal month and year for a given report date based on a simplified rule.
+    If the report date is in the first week (days 1-7) of a calendar month, it belongs to the previous fiscal month.
+    Otherwise, it belongs to the current calendar month.
+    """
+    month_map = {
+        1: 'Enero', 2: 'Febrero', 3: 'Marzo', 4: 'Abril', 5: 'Mayo', 6: 'Junio',
+        7: 'Julio', 8: 'Agosto', 9: 'Septiembre', 10: 'Octubre', 11: 'Noviembre', 12: 'Diciembre'
+    }
+
+    current_month = report_date.month
+    current_year = report_date.year
+
+    if report_date.day <= 7:
+        # Belongs to the previous fiscal month
+        fiscal_month_num = current_month - 1
+        fiscal_year = current_year
+        if fiscal_month_num == 0: # If current month is January, previous is December of previous year
+            fiscal_month_num = 12
+            fiscal_year -= 1
+    else:
+        # Belongs to the current fiscal month
+        fiscal_month_num = current_month
+        fiscal_year = current_year
+
+    fiscal_month_name = month_map.get(fiscal_month_num)
+    # For fiscal year, use last two digits as per metas_SL.csv format (e.g., 'Julio 25')
+    fiscal_year_short = fiscal_year % 100
+
+    return f"{fiscal_month_name} {fiscal_year_short}"
