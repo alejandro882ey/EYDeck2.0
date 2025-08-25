@@ -1,0 +1,13 @@
+Django>=3.0
+pandas>=1.0
+numpy>=1.18
+requests>=2.24
+beautifulsoup4>=4.9
+pytrends>=4.7
+plotly>=4.14
+statsmodels>=0.12
+arch>=5.0
+pyDolarVenezuela>=1.0
+fredapi>=0.4
+scikit-learn>=0.24
+pandasgui>=0.2
